@@ -101,6 +101,8 @@ var creditKeywords = []keywordRule{
 	{[]string{"mieteinnahme", "mietzahlung", "mietkonto", "miete ", "kaltmiete", "untermiete"}, "vermietung"},
 	{[]string{"kindergeld", "familienkasse"}, "kindergeld"},
 	{[]string{"gehalt", "lohn", "bezuege", "entgelt", "besoldung", "verguetung", "salary", "payroll", "rente ", "pension", "elterngeld", "krankengeld", "arbeitslosengeld"}, "gehalt"},
+	// Before refunds: "Zinsgutschrift" must not count as a refund.
+	{[]string{"dividende", "zinsgutschrift", "habenzins", "zinsen", "zins ", "ertragsausschuettung", "ausschuettung", "kapitalertrag", "coupon", "kupon"}, "kapitalertraege"},
 	{[]string{"erstattung", "rueckerstattung", "gutschrift", "refund", "storno", "retoure", "rueckzahlung", "rueckbuchung", "cashback"}, "erstattung"},
 }
 

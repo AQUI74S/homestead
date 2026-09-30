@@ -14,7 +14,18 @@ var (
 	reSpaces     = regexp.MustCompile(`\s+`)
 	reEinkaufBei = regexp.MustCompile(`(?i)ihr einkauf bei\s+([^,/]+)`)
 	rePPDot      = regexp.MustCompile(`(?i)\bpp\.\d+\.pp\s*\.\s*([^,/]+)`)
+	// Structured SEPA fields some banks put into the remittance text, often empty:
+	// "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende …"
+	// or "EREF+… MREF+… SVWZ+Miete Oktober".
+	reSepaFields = regexp.MustCompile(`(?i)\b(mandate ?reference|mandate ?id|creditor ?id|end ?to ?end ?id|end-to-end-id)\s*:\s*[^,]*,?|\b(EREF|MREF|CRED|KREF|ABWA|ABWE|IBAN|BIC)\+\S*|\b(remittance ?information|SVWZ)\s*[:+]\s*`)
 )
+
+// CleanRemittance removes structured SEPA field labels (and empty fields) from a
+// remittance text, leaving what a person would read.
+func CleanRemittance(s string) string {
+	s = reSepaFields.ReplaceAllString(s, " ")
+	return strings.TrimSpace(reSpaces.ReplaceAllString(strings.Trim(s, " ,;"), " "))
+}
 
 // Legal forms and filler words that don't matter for merchant detection.
 var stopWords = map[string]bool{
@@ -51,7 +62,7 @@ func Merchant(counterparty, remittance string) (display, key string) {
 		}
 	}
 	if GenericCounterparty(cp) { // some banks only provide the remittance text for card payments
-		cp = strings.TrimSpace(remittance)
+		cp = CleanRemittance(remittance)
 		if i := strings.Index(cp, "//"); i >= 0 {
 			cp = cp[:i]
 		}

@@ -13,6 +13,8 @@ func TestMerchant(t *testing.T) {
 		{"Stadtwerke Beispielstadt AG", "Abschlag 09/2026 Kd-Nr 4711", "stadtwerke beispielstadt", "Stadtwerke Beispielstadt AG"},
 		{"Abrechnung Karte", "Eigenbetriebe Abfallwi//Musterstadt/DE 19-09-2026T12:33:17 Kartennr. 5", "eigenbetriebe abfallwi", "Eigenbetriebe Abfallwi"},
 		{"", "EDEKA Center 1234//Musterstadt/DE", "edeka center", "EDEKA Center 1234"},
+		{"", "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende ISIN IE00BD8KRH84 ISHSVII-C", "zins dividende isin", "Zins/Dividende ISIN IE00BD8KRH84 ISHSVII"},
+		{"", "EREF+NOTPROVIDED SVWZ+Rewe Markt Musterstadt", "rewe musterstadt", "Rewe Markt Musterstadt"},
 	}
 	for _, c := range cases {
 		d, k := Merchant(c.cp, c.rem)
@@ -67,6 +69,8 @@ func TestClassify(t *testing.T) {
 		{"Installment loan stays loan", -28900, "Santander Consumer Bank AG", "", "Rate Autofinanzierung", "", "kredite"},
 		{"Commerzbank loan installment", -52417, "Commerzbank AG", "", "LEISTUNGEN PER 31.08.2026, IBAN DE02500400000122249601, AZ 8312345 Darlehen", "", "wohnen"},
 		{"Unknown", -1234, "Max Mustermann", "", "Danke fuers Leihen", "", "sonstiges"},
+		{"Dividend without payee", 57, "", "", "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende ISIN IE00BD8KRH84 ISHSVII-C", "", "kapitalertraege"},
+		{"Interest from broker is no refund", 1234, "Trade Republic Bank GmbH", "", "Zinsgutschrift September", "", "kapitalertraege"},
 		{"Insurance", -8733, "HUK-COBURG Allgemeine Versicherung AG", "", "Beitrag KFZ", "", "versicherung"},
 	}
 	for _, c := range cases {

@@ -423,6 +423,9 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	for i := range txs { // show the text without empty SEPA field labels
+		txs[i].Remittance = classify.CleanRemittance(txs[i].Remittance)
+	}
 	writeJSON(w, 200, txs)
 }
 
