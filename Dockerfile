@@ -3,7 +3,7 @@
 # --- build ---
 # Runs on the build machine's platform and cross-compiles for the target
 # platform, so multi-arch images build fast without emulation.
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 WORKDIR /src
