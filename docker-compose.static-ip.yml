@@ -1,0 +1,21 @@
+# Optional: give homestead its own IP in your LAN (macvlan/ipvlan network,
+# e.g. for a DNS name from Pi-hole) instead of publishing ports on the host.
+# Configure HS_LAN_NETWORK and HS_LAN_IP in .env, then:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.static-ip.yml up -d
+#
+# Requires Docker Compose 2.24 or newer (for !reset).
+services:
+  app:
+    ports: !reset []
+  caddy:
+    ports: !reset []
+    networks:
+      default:
+      lan:
+        ipv4_address: ${HS_LAN_IP:?set HS_LAN_IP in .env}
+
+networks:
+  lan:
+    external: true
+    name: ${HS_LAN_NETWORK:?set HS_LAN_NETWORK in .env}

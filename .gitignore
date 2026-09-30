@@ -1,0 +1,15 @@
+# local configuration and secrets
+.env
+data/
+secrets/
+*.pem
+*.dump
+
+# build output
+/homestead
+
+# editor / OS
+.idea/
+.vscode/
+.DS_Store
+._*

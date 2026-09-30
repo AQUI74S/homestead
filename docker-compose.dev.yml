@@ -1,0 +1,10 @@
+# Development override: build the image from source instead of pulling it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  app:
+    image: homestead:dev
+    build:
+      context: .
+      args:
+        VERSION: dev

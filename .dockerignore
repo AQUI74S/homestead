@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+**/._*
+**/.DS_Store
+.env
+.env.*
+data/
+secrets/
+*.dump
+*.pem
+docker-compose*.yml
+README.md
+LICENSE
