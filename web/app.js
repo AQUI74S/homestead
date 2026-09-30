@@ -229,7 +229,7 @@ async function viewMonat(){
   if(soon.length) banners.push(`<div class="banner warn"><p>Die Bankfreigabe für ${esc(soon[0].bank)} läuft am ${dmy(soon[0].valid_until.slice(0,10))} ab.</p><a class="btn" href="#konten">Verlängern</a></div>`);
   if(ov.accounts.length && noBudgets) banners.push(`<div class="banner"><p><b>Noch keine Budgets.</b> Ich kann jedes Budget auf den Durchschnitt der letzten ${avgN>1?avgN+' Monate':'Monate'} setzen, danach passt du einzelne Werte an.</p><button class="btn primary" data-act="suggest">Budgets vorschlagen</button></div>`);
   if(offLines.length) banners.push(`<div class="banner warn"><p><b>${offLines.length===1?'1 Budget passt':offLines.length+' Budgets passen'} nicht zu den tatsächlichen Beträgen</b> (Durchschnitt der letzten ${avgN} Monate): ${offLines.slice(0,4).map(l=>`${esc(l.name)} ${E0(l.budget)} → Ø ${E0(l.avg)}`).join(', ')}${offLines.length>4?' …':''}. Einzeln in der Tabelle unten übernehmen oder alle neu berechnen.</p><button class="btn" data-act="rebuild-budgets">Aus Ist neu berechnen</button></div>`);
-  if(ov.report.uncategorized>0) banners.push(`<div class="banner warn"><p>${ov.report.uncategorized} Umsätze in ${monthLabel(S.month)} konnte ich keiner Kategorie zuordnen.</p><a class="btn" href="#umsaetze" data-act="show-uncat">Ansehen</a></div>`);
+  if(ov.report.uncategorized>0) banners.push(`<div class="banner warn"><p>${ov.report.uncategorized===1?'1 Umsatz':`${ov.report.uncategorized} Umsätze`} in ${monthLabel(S.month)} konnte ich keiner Kategorie zuordnen.</p><a class="btn" href="#umsaetze" data-act="show-uncat">Ansehen</a></div>`);
 
   // Group totals as bars: budget marker + actual
   const gbars=OUT.map(g=>{const b=t[g].budget,i=Math.max(0,t[g].ist),over=b>0&&i>b; const scale=Math.max(b,i,1);
@@ -361,7 +361,7 @@ document.addEventListener('click', async e=>{
       toast(`${r.updated} Budgets neu berechnet (Durchschnitt ${r.months} Monate)`,3500); S.cats=[]; route();
     }
     if(act==='take-avg'){ await api('PUT',`/api/categories/${b.dataset.cat}/budget`,{amount:+b.dataset.amount}); toast('Budget übernommen',2000); viewMonat(); return; }
-    if(act==='show-uncat'){ S.txFilter={q:'',account:'',cat:String(S.cats.find(c=>c.slug==='sonstiges')?.id||''),group:''}; }
+    if(act==='show-uncat'){ S.txFilter={q:'',account:'',cat:'uncat',group:''}; }
     if(act==='rule'){ await api('PATCH',`/api/transactions/${b.dataset.tx}`,{category_id:+b.dataset.cat, rule:true}); toast('Regel gespeichert, alle passenden Umsätze neu zugeordnet',4000); loadTx(); }
     if(act==='reset-tx'){ await api('PATCH',`/api/transactions/${b.dataset.tx}`,{reset:true}); toast('Wieder automatisch zugeordnet',2500); loadTx(); }
     if(act==='rec-status'){ const cur=b.dataset.cur; const next=cur===b.dataset.status?'detected':b.dataset.status; await api('PATCH',`/api/recurring/${b.dataset.id}`,{status:next}); viewAbos(); }
@@ -434,7 +434,7 @@ function forecastHTML(ov){
       ${(k.fixkosten||0)+(k.kredit||0)?line('− Fixkosten &amp; Kredite', E(-((k.fixkosten||0)+(k.kredit||0)))):''}
       ${k.abo?line('− Abos', E(-k.abo)):''}
       ${other?line('− Sparen &amp; Sonstiges', E(-other)):''}
-      ${f.budget_rest?line('− Rest-Budget variabel', E(-f.budget_rest)):''}
+      ${f.budget_rest?line(`− variable Ausgaben <span class="muted small">(${f.budget_days===1?'noch 1 Tag':`noch ${f.budget_days} Tage`})</span>`, E(-f.budget_rest)):''}
     </div>
     <div class="fc-total"><span>Voraussichtlich frei</span><b class="tnum ${f.projected<0?'neg':''}">${E(f.projected)}</b></div>
     <p class="note">${open.length?`${open.length} wiederkehrende Zahlungen bis ${dm(ov.period.end)} noch offen.`:`Bis ${dm(ov.period.end)} ist nichts Wiederkehrendes mehr offen.`} Abos ${E(ov.abo_monthly)}, Fixkosten und Kredite ${E(ov.fixed_monthly)} pro Monat.</p></div>`;
@@ -460,7 +460,7 @@ async function viewUmsaetze(){
       <div class="field"><label for="fq">Suche</label><input id="fq" type="search" placeholder="Händler, Verwendungszweck …" value="${esc(f.q)}"></div>
       <div class="field"><label for="facc">Konto</label><select id="facc"><option value="">Alle Konten</option>${accountsCache.map(a=>`<option value="${a.id}"${String(a.id)===f.account?' selected':''}>${esc(a.display_name||a.name)} · ${esc(a.bank)}</option>`).join('')}</select></div>
       <div class="field"><label for="fgroup">Bereich</label><select id="fgroup"><option value="">Alle Bereiche</option>${Object.entries(GROUPS).map(([k,g])=>`<option value="${k}"${k===f.group?' selected':''}>${g.label}</option>`).join('')}</select></div>
-      <div class="field"><label for="fcat">Kategorie</label><select id="fcat">${catOptions(f.cat,true)}</select></div>
+      <div class="field"><label for="fcat">Kategorie</label><select id="fcat">${catOptions(f.cat,true).replace('</option>',`</option><option value="uncat"${f.cat==='uncat'?' selected':''}>Nicht zugeordnet</option>`)}</select></div>
     </div><div class="row" style="margin-top:10px"><span class="note" style="margin:0" id="txRange">${S.month?`Zeitraum: Budgetmonat ${monthLabel(S.month)} (oben umschalten)`:'Zeitraum: alle Monate'}</span><button class="btn ghost small" data-act="tx-month">${S.month?'Alle Monate zeigen':'Nur aktuellen Monat'}</button></div></section>
     <section class="ledger"><header><h2>Umsätze</h2><span class="sum" id="txSum"></span></header><div class="tbl-scroll" id="txTable"><div class="empty">Lädt …</div></div></section>`;
   let tmr; $('#fq').addEventListener('input',()=>{clearTimeout(tmr);tmr=setTimeout(()=>{readTxFilters();loadTx();},300)});
@@ -470,7 +470,7 @@ async function loadTx(){
   if(S.tab!=='umsaetze') return;
   const f=S.txFilter, p=new URLSearchParams();
   if(S.month) p.set('month',S.month); if(f.q) p.set('q',f.q); if(f.account) p.set('account_id',f.account);
-  if(f.cat) p.set('category_id',f.cat); if(f.group) p.set('group',f.group); if(f.recurring) p.set('recurring_id',f.recurring);
+  if(f.cat==='uncat') p.set('uncategorized','1'); else if(f.cat) p.set('category_id',f.cat); if(f.group) p.set('group',f.group); if(f.recurring) p.set('recurring_id',f.recurring);
   p.set('limit','1000');
   const txs = await api('GET','/api/transactions?'+p);
   S.txCache = txs;

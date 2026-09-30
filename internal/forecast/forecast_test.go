@@ -2,6 +2,7 @@ package forecast
 
 import (
 	"testing"
+	"time"
 
 	"github.com/AQUI74S/homestead/internal/store"
 )
@@ -79,5 +80,30 @@ func TestDropNextSalary(t *testing.T) {
 	res.DropNextSalary([]int64{1, 2}, "2026-09")
 	if len(res.Items) != 3 || res.OpenIn != 220000 {
 		t.Errorf("next salary not removed correctly: %+v", res)
+	}
+}
+
+func TestVariableRest(t *testing.T) {
+	d := func(s string) time.Time { x, _ := time.Parse("2006-01-02", s); return x }
+	start, end := d("2026-08-31"), d("2026-10-01") // 31 days
+	cases := []struct {
+		name          string
+		budget, spent int64
+		today         time.Time
+		want          int64
+		days          int
+	}{
+		{"last day: one day's share, not the whole unused budget", 310000, 100000, d("2026-09-30"), 10000, 1},
+		{"start of period: full budget", 310000, 0, d("2026-08-31"), 310000, 31},
+		{"mid period, little left: capped by rest", 310000, 300000, d("2026-09-15"), 10000, 16},
+		{"overspent: nothing more expected", 310000, 350000, d("2026-09-10"), 0, 21},
+		{"future period counts from its start", 310000, 0, d("2026-08-01"), 310000, 31},
+		{"period over", 310000, 0, d("2026-10-01"), 0, 0},
+	}
+	for _, c := range cases {
+		got, days := VariableRest(c.budget, c.spent, start, end, c.today)
+		if got != c.want || days != c.days {
+			t.Errorf("%s: got %d, %d days; want %d, %d days", c.name, got, days, c.want, c.days)
+		}
 	}
 }

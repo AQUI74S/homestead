@@ -136,3 +136,31 @@ func (r *Result) DropNextSalary(seriesIDs []int64, periodLabel string) {
 	}
 	r.Items = kept
 }
+
+// VariableRest estimates how much of the variable budget will still be spent
+// between today and the end of the period (end is exclusive).
+//
+// Budgets are spread evenly over the period, so with 3 of 30 days left only a
+// tenth of the monthly budget is expected. The estimate never exceeds what is
+// left of the budget: categories that ran over eat into the others, and once
+// the budget is used up nothing more is expected. It returns the estimate in
+// cents and the number of days left.
+func VariableRest(budget, spent int64, start, end, today time.Time) (int64, int) {
+	total := int(end.Sub(start).Hours()/24 + 0.5)
+	if total <= 0 || budget <= 0 || !end.After(today) {
+		return 0, 0
+	}
+	from := today
+	if from.Before(start) {
+		from = start
+	}
+	left := int(end.Sub(from).Hours()/24 + 0.5)
+	rest := budget - spent
+	if rest <= 0 {
+		return 0, left
+	}
+	if paced := budget * int64(left) / int64(total); paced < rest {
+		rest = paced
+	}
+	return rest, left
+}

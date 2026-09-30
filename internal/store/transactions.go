@@ -189,6 +189,9 @@ type TxnFilter struct {
 	LeaseID     int64
 	PropertyID  int64
 	Limit       int
+	// Uncategorized keeps only what the classifier could not place
+	// (Sonstiges / Sonstige Einnahmen) and nobody has confirmed by hand.
+	Uncategorized bool
 }
 
 func (s *Store) Transactions(ctx context.Context, f TxnFilter) ([]Transaction, error) {
@@ -208,6 +211,9 @@ func (s *Store) Transactions(ctx context.Context, f TxnFilter) ([]Transaction, e
 	}
 	if f.CategoryID > 0 {
 		where = append(where, "t.category_id = "+arg(f.CategoryID))
+	}
+	if f.Uncategorized {
+		where = append(where, "c.slug IN ('sonstiges','einnahmen-sonst') AND t.category_source <> 'manual'")
 	}
 	if f.Group != "" {
 		where = append(where, "c.grp = "+arg(f.Group))

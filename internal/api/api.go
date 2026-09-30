@@ -290,7 +290,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	if pc.Mode == "salary" {
 		fc.DropNextSalary(pc.SeriesIDs, m)
 	}
-	var incomeIst, outIst, budgetRest int64
+	var incomeIst, outIst, varBudget, varIst int64
 	for _, l := range rep.Lines {
 		switch l.Group {
 		case "income":
@@ -298,12 +298,14 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		case "transfer":
 		default:
 			outIst += l.IstCents
-			// Remaining budget for variable spending, unless already expected as a recurring payment
-			if l.Group == "expenses" && !recCats[l.ID] && l.BudgetCents > l.IstCents {
-				budgetRest += l.BudgetCents - l.IstCents
+			// Variable spending, unless already expected as a recurring payment
+			if l.Group == "expenses" && !recCats[l.ID] {
+				varBudget += l.BudgetCents
+				varIst += l.IstCents
 			}
 		}
 	}
+	budgetRest, daysLeft := forecast.VariableRest(varBudget, varIst, start, end, today)
 	// "Demnächst abgebucht" (upcoming debits): next 30 days, independent of the budget month
 	up := forecast.Compute(rec, today, today.AddDate(0, 0, 31), today)
 	upcoming := []forecast.Item{}
@@ -324,7 +326,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		"period": pc.Describe(m), "current_month": pc.Current(now), "upcoming": upcoming,
 		"forecast": map[string]any{
 			"items": fc.Items, "open_in": fc.OpenIn, "open_out": fc.OpenOut, "open_by_kind": fc.OpenByKind,
-			"budget_rest": budgetRest, "income_ist": incomeIst, "out_ist": outIst, "past": past,
+			"budget_rest": budgetRest, "budget_days": daysLeft, "income_ist": incomeIst, "out_ist": outIst, "past": past,
 			"projected": incomeIst + fc.OpenIn - outIst - fc.OpenOut - budgetRest,
 		},
 		"name_a": settings["name_a"], "name_b": settings["name_b"],
@@ -411,7 +413,7 @@ func (s *Server) transactions(w http.ResponseWriter, r *http.Request) {
 	}
 	f := store.TxnFilter{Month: q.Get("month"), CategoryID: num("category_id"), Group: q.Get("group"),
 		AccountID: num("account_id"), Search: q.Get("q"), RecurringID: num("recurring_id"), Limit: int(num("limit")),
-		Book: book, LeaseID: num("lease_id"), PropertyID: num("property_id")}
+		Book: book, LeaseID: num("lease_id"), PropertyID: num("property_id"), Uncategorized: q.Get("uncategorized") == "1"}
 	txs, err := s.st.Transactions(r.Context(), f)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "Monat") {
