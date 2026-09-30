@@ -1,0 +1,55 @@
+# homestead – runs the published image. All settings come from .env
+# (see .env.example); nothing in this file needs to be edited.
+#
+#   cp .env.example .env    # fill in the values
+#   docker compose up -d
+name: homestead
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-homestead}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-homestead}
+    volumes:
+      - ${HS_DATA_DIR:-./data}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  app:
+    image: ${HS_IMAGE:-ghcr.io/aqui74s/homestead:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HS_DATABASE_URL: postgres://${POSTGRES_USER:-homestead}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-homestead}?sslmode=disable
+      HS_PUBLIC_URL: ${HS_PUBLIC_URL:-https://${HS_DOMAIN:-localhost}}
+      HS_PASSWORD: ${HS_PASSWORD:-}
+      HS_SESSION_KEY: ${HS_SESSION_KEY:-}
+      HS_SYNC_INTERVAL: ${HS_SYNC_INTERVAL:-6h}
+      HS_DEMO: ${HS_DEMO:-false}
+      EB_APP_ID: ${EB_APP_ID:-}
+      EB_COUNTRY: ${EB_COUNTRY:-DE}
+      EB_API_BASE: ${EB_API_BASE:-https://api.enablebanking.com}
+      EB_PRIVATE_KEY: /run/secrets/enablebanking.pem
+    volumes:
+      - ${HS_DATA_DIR:-./data}/secrets:/run/secrets:ro
+    ports:
+      - "${HS_HTTP_PORT:-8080}:8080"
+
+  # HTTPS in front of the app – Enable Banking only accepts https redirect URLs.
+  # Uses Caddy's internal CA (accept the certificate once in the browser).
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    command: caddy reverse-proxy --from ${HS_DOMAIN:-localhost} --to app:8080 --internal-certs
+    volumes:
+      - ${HS_DATA_DIR:-./data}/caddy:/data
+    ports:
+      - "${HS_HTTPS_PORT:-443}:443"
