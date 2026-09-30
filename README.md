@@ -197,16 +197,21 @@ internal/enablebanking Enable Banking client and simulated demo bank
 internal/hv            property management: assignment, rent ledger, settlement, deadlines
 internal/store         PostgreSQL access and migrations (SQL only, no business logic)
 internal/syncer        bank sync with request limits, reclassification
-web                    static frontend (vanilla JS modules, embedded into the binary)
+web                    static frontend, embedded into the binary
+web/js/core            shared frontend modules: constants, formatting, API, state, actions, app shell
+web/js/views           one module per page (views/hv for the property management)
 ```
 
 Values that are stored in the database or sent to the UI (books, groups, kinds, statuses,
 setting keys) are defined once in `internal/domain` and used everywhere else; SQL
 fragments that need them are built from these constants in `internal/store/sql.go`.
+The frontend uses plain ES modules without a build step. Each view registers its page
+with `registerView` and its event handlers with `onClick` / `onChange` / `onSubmit`
+(`web/js/core/actions.js`), so markup only carries `data-act="…"` attributes.
 API handlers return an `error` and are wrapped by `Server.handle`, which turns it into a
 JSON response (`badRequest(...)` → 400, `store.ErrNotFound` → 404, everything else → 500).
 
-**CI/CD:** every push and pull request runs gofmt, `go vet`, the tests (with a Postgres service) and a JavaScript syntax check. Pushes to `main` and version tags build a multi-arch image (`linux/amd64`, `linux/arm64`) and push it to GHCR. Create a release with `git tag v1.0.0 && git push --tags`.
+**CI/CD:** every push and pull request runs gofmt, `go vet`, the tests (with a Postgres service) and a JavaScript syntax and formatting check (Prettier, see `.prettierrc.json`; run `npx prettier --write "web/js/**/*.js"` before committing). Pushes to `main` and version tags build a multi-arch image (`linux/amd64`, `linux/arm64`) and push it to GHCR. Create a release with `git tag v1.0.0 && git push --tags`.
 
 ## Security
 

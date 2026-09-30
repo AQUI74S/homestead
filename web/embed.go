@@ -3,5 +3,5 @@ package web
 
 import "embed"
 
-//go:embed index.html app.js hv.js app.css datenschutz.html nutzungsbedingungen.html
+//go:embed index.html app.css datenschutz.html nutzungsbedingungen.html js
 var FS embed.FS

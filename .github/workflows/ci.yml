@@ -39,8 +39,13 @@ jobs:
         run: go test -race -p 1 ./...
         env:
           HS_TEST_DATABASE_URL: postgres://homestead:homestead@localhost:5432/homestead_test?sslmode=disable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: JavaScript syntax
-        run: for f in web/*.js; do node --check "$f"; done
+        run: find web/js -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: JavaScript formatting
+        run: npx --yes prettier@3.9.9 --check "web/js/**/*.js"
 
   image:
     needs: test
