@@ -65,12 +65,13 @@ func run(log *slog.Logger) error {
 	}
 
 	sy := syncer.New(st, provider, log)
+	sy.Configure(cfg.BankDailyLimit, cfg.SyncInterval)
 	if cfg.Demo {
 		if err := demo.Seed(ctx, st, sy, log); err != nil {
 			log.Error("could not create demo data", "err", err)
 		}
 	}
-	go sy.Run(ctx, cfg.SyncInterval)
+	go sy.Run(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

@@ -24,10 +24,10 @@ import (
 //     monthly income) booked between the 22nd and the 5th, i.e. around the turn of
 //     the month.
 type PeriodCalc struct {
-	Mode       string  // salary | calendar
-	Auto       bool    // salary mode without selected series
-	SeriesIDs  []int64 // recurring series whose payments start periods
-	SeriesName string  // description for the UI
+	Mode       string               // salary | calendar
+	Auto       bool                 // salary mode without selected series
+	SeriesIDs  []int64              // recurring series whose payments start periods
+	SeriesName string               // description for the UI
 	byLabel    map[string]time.Time // month label -> first salary date
 	offset     int                  // usual start in days relative to the 1st of the label month
 	today      time.Time            // reference day for salaries that are due but not booked yet
@@ -238,9 +238,9 @@ func (pc *PeriodCalc) Current(day time.Time) string {
 
 // Period describes a budget period for the UI.
 type Period struct {
-	Month    string `json:"month"`
-	Start    string `json:"start"`
-	End      string `json:"end"` // last day (inclusive)
+	Month  string `json:"month"`
+	Start  string `json:"start"`
+	End    string `json:"end"` // last day (inclusive)
 	Mode   string `json:"mode"`
 	Auto   bool   `json:"auto"`
 	Salary string `json:"salary_series"`

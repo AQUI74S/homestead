@@ -34,7 +34,7 @@ func Seed(ctx context.Context, st *store.Store, sy *syncer.Syncer, log *slog.Log
 		if _, err := st.CreatePendingConnection(ctx, b.bank, "DE", state, b.book); err != nil {
 			return err
 		}
-		if _, err := sy.CompleteAuth(ctx, state, "demo:"+b.bank); err != nil {
+		if _, err := sy.CompleteAuth(ctx, state, "demo:"+b.bank, nil); err != nil {
 			return fmt.Errorf("%s verbinden: %w", b.bank, err)
 		}
 	}

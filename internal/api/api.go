@@ -610,10 +610,20 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if a == nil {
-		a = []store.Account{}
+	sched, _ := s.sync.Schedules(r.Context())
+	type withSchedule struct {
+		store.Account
+		Schedule *syncer.Schedule `json:"schedule"`
 	}
-	writeJSON(w, 200, a)
+	out := []withSchedule{}
+	for _, acc := range a {
+		row := withSchedule{Account: acc}
+		if sc, ok := sched[acc.ID]; ok {
+			row.Schedule = &sc
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) patchAccount(w http.ResponseWriter, r *http.Request) {
@@ -719,7 +729,8 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		back("fehler")
 		return
 	}
-	if _, err := s.sync.CompleteAuth(r.Context(), q.Get("state"), q.Get("code")); err != nil {
+	psu := eb.PSUFromRequest(r)
+	if _, err := s.sync.CompleteAuth(r.Context(), q.Get("state"), q.Get("code"), &psu); err != nil {
 		s.log.Error("bank authorization failed", "err", err)
 		back("fehler")
 		return
@@ -751,7 +762,8 @@ func (s *Server) deleteConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) triggerSync(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 202, map[string]bool{"started": s.sync.TriggerAsync()})
+	psu := eb.PSUFromRequest(r) // the user clicked "sync now": requests are user-initiated
+	writeJSON(w, 202, map[string]bool{"started": s.sync.TriggerAsync(&psu)})
 }
 
 func (s *Server) syncStatus(w http.ResponseWriter, r *http.Request) {

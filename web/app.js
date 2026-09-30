@@ -567,7 +567,7 @@ async function viewKonten(book){
   main.innerHTML = `${msg?`<div class="banner ${msg[0]}"><p>${msg[1]}</p></div>`:''}
     ${S.me.demo?'<div class="banner warn"><p><b>Demo-Modus:</b> Die Banken hier sind simuliert. Für echte Konten <code>HS_DEMO</code> ausschalten und Enable Banking einrichten (siehe README).</p></div>':''}
     <section class="card"><div class="row"><div><h3 style="margin:0">Bankverbindungen ${isHH?'Haushaltsbuch':'Hausverwaltung'}</h3></div><span class="spacer"></span>
-      <button class="btn" data-act="sync">Jetzt abrufen</button><button class="btn primary" data-act="show-banks">${S.showBanks?'Schließen':'Bank verbinden'}</button></div>
+      <button class="btn" data-act="sync" title="Ein Abruf von Hand zählt nicht zum Tageslimit der Bank, weil du dabei bist.">Jetzt abrufen</button><button class="btn primary" data-act="show-banks">${S.showBanks?'Schließen':'Bank verbinden'}</button></div>
       ${S.showBanks?`<div class="field" style="margin-top:12px"><label for="bankq">Bank suchen</label><input id="bankq" type="search" placeholder="z. B. Sparkasse, DKB, ING, Volksbank …" value="${esc(S.bankFilter)}"></div>
         <div class="bank-list" id="bankList">${bankButtons(banks)}</div>
         <p class="note">Du wirst zu deiner Bank weitergeleitet und bestätigst dort mit Login und TAN. Die Freigabe ist nur lesend und gilt je nach Bank 90 bis 180 Tage. Neue Konten landen im Bereich <b>${isHH?'Haushaltsbuch':'Hausverwaltung'}</b>.</p>`:''}
@@ -581,6 +581,7 @@ async function viewKonten(book){
       <div class="top"><div><b>${esc(a.display_name||a.name)}</b><div class="muted small">${esc(a.bank)}</div><div class="iban">${esc((a.iban||'').replace(/(.{4})/g,'$1 ').trim())}</div></div>
         <div class="bal"><b class="${a.balance<0?'neg':''}">${a.balance!=null?E(a.balance):'–'}</b><div class="muted small">abgerufen ${ago(a.last_synced_at)}</div></div></div>
       ${a.sync_error?`<div class="banner bad"><p>${esc(a.sync_error)}</p></div>`:''}
+      ${scheduleHTML(a)}
       <div class="row">
         <div class="field" style="flex:1 1 140px"${isHH?'':' hidden'}><label>Gehört</label><select data-owner data-acc="1"><option value="A"${a.owner==='A'?' selected':''}>${esc(nameOf('A'))}</option><option value="B"${a.owner==='B'?' selected':''}>${esc(nameOf('B'))}</option><option value=""${a.owner===''?' selected':''}>Gemeinsam</option></select></div>
         <div class="field" style="flex:2 1 180px"><label>Anzeigename</label><input data-dname data-acc="1" data-owner-skip value="${esc(a.display_name)}" placeholder="${esc(a.name)}"></div>
@@ -594,6 +595,17 @@ async function viewKonten(book){
     ${S.me.auth_required?'<div class="row"><span class="spacer"></span><button class="btn ghost" data-act="logout">Abmelden</button></div>':''}`;
   const bq=$('#bankq'); if(bq){ bq.addEventListener('input',()=>{ S.bankFilter=bq.value; const f=(S.banks||[]).filter(b=>b.name.toLowerCase().includes(bq.value.toLowerCase())); $('#bankList').innerHTML=bankButtons(f); }); bq.focus(); }
   if(bankMsg==='ok') pollSync();
+}
+// Automatic sync plan of an account (bank request limits, see syncer.Schedule).
+function scheduleHTML(a){
+  const sc=a.schedule; if(!sc||!a.active||a.connection_status!=='active') return '';
+  const when=iso=>{ const d=new Date(iso), t=new Date(); const hm=d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+    return d.toDateString()===t.toDateString()?`heute ${hm}`:d.toDateString()===new Date(t.getTime()+864e5).toDateString()?`morgen ${hm}`:`${d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})} ${hm}`; };
+  const hours=Math.round(parseFloat(sc.interval)||0);
+  const limit=`${sc.used} von ${sc.limit} automatischen Abrufen in 24 h${sc.learned?' (Limit dieser Bank, automatisch erkannt)':''}`;
+  if(sc.limited_until && new Date(sc.limited_until)>new Date())
+    return `<p class="small sched warn">Bank-Limit erreicht – automatischer Abruf wieder ab ${when(sc.limited_until)}. ${limit}.</p>`;
+  return `<p class="small muted sched">Automatisch etwa alle ${hours} h${sc.next?`, nächster Abruf ${new Date(sc.next)<=new Date()?'in Kürze':when(sc.next)}`:''} · ${limit}.</p>`;
 }
 // Account fields: data-owner marks the owner select; the other fields trigger the same save.
 main.addEventListener('change', e=>{ if(e.target.dataset.acc && e.target.dataset.ownerSkip!==undefined){ const sel=e.target.closest('[data-accid]').querySelector('[data-owner]'); sel.dispatchEvent(new Event('change',{bubbles:true})); } });

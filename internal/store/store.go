@@ -271,6 +271,8 @@ type Account struct {
 	SyncError    string     `json:"sync_error"`
 	Active       bool       `json:"active"`
 	Book         string     `json:"book"`
+	DailyLimit   *int       `json:"daily_limit"`   // learned bank limit (nil = default)
+	LimitedUntil *time.Time `json:"limited_until"` // paused after the bank's limit was hit
 	// from the connection
 	ConnStatus string     `json:"connection_status"`
 	ValidUntil *time.Time `json:"valid_until"`
@@ -291,15 +293,24 @@ func (s *Store) UpsertAccount(ctx context.Context, a Account) (int64, error) {
 }
 
 const accountCols = `a.id, a.connection_id, a.provider_uid, a.iban, a.bank_name, a.name, a.display_name, a.currency, a.owner,
-	(a.balance*100)::bigint, a.balance_at, a.last_synced_at, a.sync_error, a.active, COALESCE(c.status,''), c.valid_until, a.book`
+	(a.balance*100)::bigint, a.balance_at, a.last_synced_at, a.sync_error, a.active, COALESCE(c.status,''), c.valid_until, a.book,
+	a.daily_limit, a.limited_until`
 
 func scanAccount(sc interface{ Scan(...any) error }) (Account, error) {
 	var a Account
 	var conn sql.NullInt64
 	var bal sql.NullInt64
-	var balAt, synced, vu sql.NullTime
+	var balAt, synced, vu, lim sql.NullTime
+	var dl sql.NullInt64
 	err := sc.Scan(&a.ID, &conn, &a.ProviderUID, &a.IBAN, &a.BankName, &a.Name, &a.DisplayName, &a.Currency, &a.Owner,
-		&bal, &balAt, &synced, &a.SyncError, &a.Active, &a.ConnStatus, &vu, &a.Book)
+		&bal, &balAt, &synced, &a.SyncError, &a.Active, &a.ConnStatus, &vu, &a.Book, &dl, &lim)
+	if dl.Valid {
+		v := int(dl.Int64)
+		a.DailyLimit = &v
+	}
+	if lim.Valid {
+		a.LimitedUntil = &lim.Time
+	}
 	if conn.Valid {
 		a.ConnectionID = &conn.Int64
 	}
@@ -360,6 +371,44 @@ func (s *Store) SetAccountSynced(ctx context.Context, id int64, syncErr string) 
 		return err
 	}
 	_, err := s.DB.ExecContext(ctx, `UPDATE accounts SET sync_error='', last_synced_at=now() WHERE id=$1`, id)
+	return err
+}
+
+// RecordBankCall logs a request to the bank for an account and drops entries older
+// than a week.
+func (s *Store) RecordBankCall(ctx context.Context, accountID int64, attended bool) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO bank_calls(account_id, attended) VALUES ($1,$2)`, accountID, attended)
+	if err == nil {
+		_, err = s.DB.ExecContext(ctx, `DELETE FROM bank_calls WHERE at < now() - interval '7 days'`)
+	}
+	return err
+}
+
+// UnattendedCalls returns, per account, the times of unattended bank requests since the given time.
+func (s *Store) UnattendedCalls(ctx context.Context, since time.Time) (map[int64][]time.Time, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT account_id, at FROM bank_calls WHERE NOT attended AND at >= $1 ORDER BY at`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]time.Time{}
+	for rows.Next() {
+		var id int64
+		var at time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], at)
+	}
+	return out, rows.Err()
+}
+
+// SetAccountLimited pauses automatic syncs of an account until the given time and
+// optionally stores a (lower) learned daily limit.
+func (s *Store) SetAccountLimited(ctx context.Context, id int64, until time.Time, learned *int) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE accounts SET limited_until=$2,
+		daily_limit = CASE WHEN $3::int IS NULL THEN daily_limit ELSE LEAST(COALESCE(daily_limit, $3::int), $3::int) END
+		WHERE id=$1`, id, until, learned)
 	return err
 }
 

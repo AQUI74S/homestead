@@ -253,6 +253,11 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Accept", "application/json")
+	if psu, ok := PSUFrom(ctx); ok && strings.HasPrefix(path, "/accounts/") {
+		for k, v := range psu.headers() {
+			req.Header.Set(k, v)
+		}
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

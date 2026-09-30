@@ -66,7 +66,8 @@ Edit `.env` – it contains **every** setting, with comments. `docker-compose.ym
 | `HS_PUBLIC_URL` | public URL (redirect target after the bank login); empty = `https://$HS_DOMAIN` |
 | `HS_PASSWORD` | login password for the web UI; empty = no login (local testing only!) |
 | `HS_SESSION_KEY` | random secret for login cookies, ≥ 32 characters (`openssl rand -hex 32`) |
-| `HS_SYNC_INTERVAL` | bank sync interval, minimum `1h`, default `6h` |
+| `HS_BANK_DAILY_LIMIT` | automatic bank requests per account and 24 h, default `4` (see below) |
+| `HS_SYNC_INTERVAL` | minimum time between automatic syncs of an account, default `6h` |
 | `HS_DEMO` | `true` = simulated bank with sample data |
 | `EB_APP_ID` / `EB_COUNTRY` / `EB_API_BASE` | Enable Banking application ID, country for the bank list, API endpoint |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | database credentials |
@@ -92,7 +93,7 @@ Enable Banking is a licensed account information service. Access to **your own a
 
 Good to know:
 - Bank consents last 90–180 days. The app reminds you 14 days before expiry; renewing takes one click and a TAN.
-- Without you present, banks allow only 4 fetches per day and account – hence the default interval of 6 hours.
+- **Request limits:** without you present, banks allow only a few requests per day and account (PSD2: usually 4, some banks fewer). One sync needs two requests (transactions and balance), so homestead syncs each account about every 12 hours. If a bank rejects a request because of its limit, the account pauses for 6 hours and homestead remembers the lower limit for that bank (shown under **Konten**). Clicking **Jetzt abrufen** sends your browser's details along (PSU headers), so these requests don't count towards the limit.
 - On first sync the app tries to fetch 2 years of history; many banks only return 90 days. Use the CSV import for older data.
 
 ### 3. Run

@@ -8,18 +8,20 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	Addr         string        // HTTP listen address, e.g. ":8080"
-	PublicURL    string        // public base URL, e.g. https://homestead.example.com (used for the bank redirect)
-	DatabaseURL  string        // Postgres DSN
-	Password     string        // login password for the web UI (empty = no login, local testing only)
-	SessionKey   string        // secret used to sign login cookies
-	SyncInterval time.Duration // interval between automatic bank syncs
-	Demo         bool          // use the simulated demo bank instead of Enable Banking
+	Addr           string        // HTTP listen address, e.g. ":8080"
+	PublicURL      string        // public base URL, e.g. https://homestead.example.com (used for the bank redirect)
+	DatabaseURL    string        // Postgres DSN
+	Password       string        // login password for the web UI (empty = no login, local testing only)
+	SessionKey     string        // secret used to sign login cookies
+	SyncInterval   time.Duration // minimum interval between automatic syncs of an account
+	BankDailyLimit int           // unattended bank requests per account and 24 h (PSD2: usually 4)
+	Demo           bool          // use the simulated demo bank instead of Enable Banking
 
 	EBAppID      string // Enable Banking application ID (kid in the JWT)
 	EBKeyPath    string // path to the private RSA key (PEM)
@@ -45,6 +47,9 @@ func Load() (Config, error) {
 	var err error
 	if c.SyncInterval, err = time.ParseDuration(setting("SYNC_INTERVAL", "6h")); err != nil {
 		return c, fmt.Errorf("HS_SYNC_INTERVAL: %w", err)
+	}
+	if c.BankDailyLimit, err = strconv.Atoi(setting("BANK_DAILY_LIMIT", "4")); err != nil || c.BankDailyLimit < 2 {
+		return c, fmt.Errorf("HS_BANK_DAILY_LIMIT: whole number of at least 2 expected")
 	}
 	if c.SyncInterval < time.Hour {
 		// Without the user present, PSD2 allows only 4 fetches per day and account.
