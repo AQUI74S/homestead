@@ -322,6 +322,20 @@ func (s *Store) UpsertRule(ctx context.Context, field, pattern string, categoryI
 	return err
 }
 
+// ReleaseToRule hands transactions that were set by hand to the same category
+// over to a new rule, so they count as rule-based from now on. Hand choices
+// that differ from the rule stay untouched.
+func (s *Store) ReleaseToRule(ctx context.Context, field, pattern string, categoryID int64) error {
+	col := map[string]string{"merchant": "merchant_key", "iban": "counterparty_iban"}[field]
+	if col == "" {
+		return nil
+	}
+	_, err := s.DB.ExecContext(ctx, `UPDATE transactions SET category_source='auto'
+		WHERE category_source='manual' AND category_id=$2 AND lower(replace(`+col+`,' ',''))=lower(replace($1,' ',''))`,
+		strings.TrimSpace(pattern), categoryID)
+	return err
+}
+
 func (s *Store) DeleteRule(ctx context.Context, id int64) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM rules WHERE id=$1`, id)
 	return err

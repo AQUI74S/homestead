@@ -14,6 +14,8 @@ func TestMerchant(t *testing.T) {
 		{"Abrechnung Karte", "Eigenbetriebe Abfallwi//Musterstadt/DE 19-09-2026T12:33:17 Kartennr. 5", "eigenbetriebe abfallwi", "Eigenbetriebe Abfallwi"},
 		{"", "EDEKA Center 1234//Musterstadt/DE", "edeka center", "EDEKA Center 1234"},
 		{"", "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende ISIN IE00BD8KRH84 ISHSVII-C", "zins dividende isin", "Zins/Dividende ISIN IE00BD8KRH84 ISHSVII"},
+		{"WP-ABRECHNUNG 0494152971001Kauf ISIN IE0", "WP-ABRECHNUNG 0494152971001Kauf ISIN IE00B60SX394 INVESCO", "wertpapier abrechnung", "Wertpapier-Abrechnung"},
+		{"", "WP-ABRECHNUNG 0494153093001Kauf ISIN IE00BD8KRH84 ISHSVII-C", "wertpapier abrechnung", "Wertpapier-Abrechnung"},
 		{"", "EREF+NOTPROVIDED SVWZ+Rewe Markt Musterstadt", "rewe musterstadt", "Rewe Markt Musterstadt"},
 	}
 	for _, c := range cases {
@@ -71,6 +73,7 @@ func TestClassify(t *testing.T) {
 		{"Unknown", -1234, "Max Mustermann", "", "Danke fuers Leihen", "", "sonstiges"},
 		{"Dividend without payee", 57, "", "", "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende ISIN IE00BD8KRH84 ISHSVII-C", "", "kapitalertraege"},
 		{"Interest from broker is no refund", 1234, "Trade Republic Bank GmbH", "", "Zinsgutschrift September", "", "kapitalertraege"},
+		{"Securities purchase", -70006, "", "", "WP-ABRECHNUNG 0494152971001Kauf ISIN IE00B60SX394 INVESCO", "", "sparen"},
 		{"Insurance", -8733, "HUK-COBURG Allgemeine Versicherung AG", "", "Beitrag KFZ", "", "versicherung"},
 	}
 	for _, c := range cases {

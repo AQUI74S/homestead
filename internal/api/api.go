@@ -474,6 +474,11 @@ func (s *Server) patchTransaction(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, r, err)
 				return
 			}
+			// This and earlier hand choices for the same merchant now follow the rule
+			if err := s.st.ReleaseToRule(ctx, field, pattern, in.CategoryID); err != nil {
+				s.fail(w, r, err)
+				return
+			}
 		}
 	}
 	if err := s.sync.Reclassify(ctx); err != nil {

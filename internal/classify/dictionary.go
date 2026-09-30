@@ -83,7 +83,7 @@ type keywordRule struct {
 var debitKeywords = []keywordRule{
 	{[]string{"leistungen per", "leistungen zum", "darlehensleistung", "baufinanzierung", "immobilienfinanzierung", "hausfinanzierung", "wohnbaufinanzierung", "baudarlehen", "immobiliendarlehen", "annuitaetendarlehen", "hypothek", "grundschuld", "kaltmiete", "warmmiete", "miete ", "miete", "nebenkosten", "hausgeld", "hausverwaltung", "wohnungsbau", "wohnbau", "baugenossenschaft"}, "wohnen"},
 	{[]string{"tilgung", "darlehen", "kreditrate", "ratenzahlung", "finanzierung", "annuitaet"}, "kredite"},
-	{[]string{"sparplan", "depot", "tagesgeld", "festgeld", "bausparvertrag", "vermoegenswirksam", "vwl", "etf"}, "sparen"},
+	{[]string{"wp-abrechnung", "wp abrechnung", "wertpapierabrechnung", "wertpapier abrechnung", "sparplan", "depot", "tagesgeld", "festgeld", "bausparvertrag", "vermoegenswirksam", "vwl", "etf"}, "sparen"},
 	cashKeywords,
 	{[]string{"rundfunkbeitrag"}, "rundfunk"},
 	{[]string{"versicherung", "beitrag kfz", "police"}, "versicherung"},

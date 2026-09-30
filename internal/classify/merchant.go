@@ -13,7 +13,9 @@ var (
 	reDigits     = regexp.MustCompile(`\b[0-9][0-9./-]*\b`)
 	reSpaces     = regexp.MustCompile(`\s+`)
 	reEinkaufBei = regexp.MustCompile(`(?i)ihr einkauf bei\s+([^,/]+)`)
-	rePPDot      = regexp.MustCompile(`(?i)\bpp\.\d+\.pp\s*\.\s*([^,/]+)`)
+	// Securities settlements carry a unique order number: "WP-ABRECHNUNG 0494152971001Kauf ISIN …"
+	reWPAbrechnung = regexp.MustCompile(`(?i)^\s*(wp-?abrechnung|wertpapierabrechnung|wertpapier-abrechnung)\b`)
+	rePPDot        = regexp.MustCompile(`(?i)\bpp\.\d+\.pp\s*\.\s*([^,/]+)`)
 	// Structured SEPA fields some banks put into the remittance text, often empty:
 	// "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende …"
 	// or "EREF+… MREF+… SVWZ+Miete Oktober".
@@ -69,6 +71,9 @@ func Merchant(counterparty, remittance string) (display, key string) {
 		if len(cp) > 40 {
 			cp = cp[:40]
 		}
+	}
+	if reWPAbrechnung.MatchString(cp) || cp == "" && reWPAbrechnung.MatchString(remittance) {
+		return "Wertpapier-Abrechnung", "wertpapier abrechnung"
 	}
 	key = NormalizeKey(cp)
 	display = prettyName(cp)
