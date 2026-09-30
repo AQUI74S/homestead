@@ -7,26 +7,44 @@
 <meta name="color-scheme" content="light dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="app.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F6F78'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='white' stroke-width='3.5' stroke-dasharray='36 50' transform='rotate(-90 16 16)'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230F6E6A'/%3E%3Cpath d='M7 15l9-7 9 7M9 14v10h14V14M14 24v-6h4v6' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
-<div class="wrap">
-  <header class="top" id="top" hidden>
-    <div class="brand"><h1 id="areaTitle">Haushaltsbuch</h1><span id="syncState" class="status"></span></div>
+<div class="app">
+  <aside class="side" id="side" hidden>
+    <a class="logo" href="#monat" aria-label="homestead – Startseite">
+      <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span>
+      <span class="logo-text">homestead</span>
+    </a>
     <div class="areas" role="group" aria-label="Bereich">
-      <a href="#monat" data-area="haushalt">Haushaltsbuch</a>
-      <a href="#hv" data-area="verwaltung">Hausverwaltung</a>
+      <a href="#monat" data-area="haushalt">Haushalt</a>
+      <a href="#hv" data-area="verwaltung">Verwaltung</a>
     </div>
-    <div class="monthnav" id="monthnav" role="group" aria-label="Monat wählen">
-      <button id="prevM" aria-label="Vorheriger Monat">‹</button>
-      <span class="mwrap"><strong id="mLabel"></strong><span id="pRange" class="prange"></span></span>
-      <button id="nextM" aria-label="Nächster Monat">›</button>
+    <nav class="nav" id="tabs" aria-label="Seiten"></nav>
+    <div class="side-foot">
+      <div class="side-label" id="sideAccTitle">Konten</div>
+      <div class="side-accounts" id="sideAccounts"></div>
+      <div class="status" id="syncState" aria-live="polite"></div>
     </div>
-    <nav class="tabs" id="tabs" aria-label="Seiten"></nav>
-  </header>
-  <main id="main"><div class="card empty">Lädt …</div></main>
+  </aside>
+  <div class="content">
+    <header class="top" id="top" hidden>
+      <div class="heading">
+        <div class="overline"><span id="areaTitle">Haushaltsbuch</span><span id="pRange" class="prange"></span></div>
+        <h1 id="mLabel"></h1>
+      </div>
+      <div class="top-actions">
+        <div class="monthnav" id="monthnav" role="group" aria-label="Monat wählen">
+          <button id="prevM" class="icon-btn" aria-label="Vorheriger Monat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <button id="nextM" class="icon-btn" aria-label="Nächster Monat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <button class="btn dark sync-btn" data-act="sync" title="Ein Abruf von Hand zählt nicht zum Tageslimit der Bank, weil du dabei bist."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><span>Jetzt abrufen</span></button>
+      </div>
+    </header>
+    <main id="main"><div class="card empty">Lädt …</div></main>
+  </div>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script src="app.js"></script>

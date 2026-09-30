@@ -40,30 +40,44 @@ async function hvOverview(){
   if(!ov.accounts.length) steps.push(`Unter <a href="#konten">Konten</a> beim Mietkonto „Gehört zu: Hausverwaltung“ wählen.`);
   if(!ov.properties.length) steps.push(`Unter <a href="#hv-objekte">Objekte</a> Häuser bzw. Wohnungen mit ihren Einheiten anlegen.`);
   if(ov.properties.length && !ov.leases.length) steps.push(`Unter <a href="#hv-mieter">Mieter &amp; Verträge</a> die Mietverträge eintragen. Die App ordnet Zahlungen dann automatisch zu.`);
+  const rep = await api('GET','/api/hv/report?year='+HV.year).catch(()=>({properties:[]}));
+  const repBy = Object.fromEntries((rep.properties||[]).map(p=>[p.property_id,p]));
+  const initials = n => String(n||'?').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+  const tone = r => !r ? '' : r.status==='bezahlt' ? 'ok' : r.status==='teilweise' ? 'warn' : r.status==='offen' ? 'bad' : '';
   const rows = ov.leases.map(l=>{
     const r=l.row;
     return `<tr data-open-lease="${l.id}" class="clickable">
-      <td><b>${esc(l.tenant.name)}</b><br><span class="muted small">${esc(l.property_name)} · ${esc(l.unit_name)}</span></td>
+      <td><div class="who"><span class="avatar ${tone(r)}" aria-hidden="true">${esc(initials(l.tenant.name))}</span><div><b>${esc(l.tenant.name)}</b><br><span class="muted small">${esc(l.property_name)} · ${esc(l.unit_name)}</span></div></div></td>
       <td class="r tnum">${r?E(r.soll):'–'}</td><td class="r tnum">${r?E(r.paid):'–'}</td>
-      <td>${r?pill(r.status):'<span class="muted small">kein Soll</span>'}${r&&r.status!=='bezahlt'?`<br><span class="muted small">fällig ${dm(r.due_date)}</span>`:''}</td>
-      <td class="r tnum ${l.balance>0?'neg':l.balance<0?'pos':''}"><b>${E(l.balance)}</b><br><span class="muted small">${l.balance>0?'Rückstand':l.balance<0?'Guthaben':'ausgeglichen'}</span></td></tr>`;
+      <td>${r?pill(r.status):'<span class="muted small">kein Soll</span>'}${r&&r.status!=='bezahlt'?` <span class="muted small">fällig ${dm(r.due_date)}</span>`:''}</td>
+      <td class="r tnum ${l.balance>0?'neg':l.balance<0?'pos':''}"><b>${E(-l.balance)}</b><br><span class="muted small">${l.balance>0?'Rückstand':l.balance<0?'Guthaben':'ausgeglichen'}</span></td></tr>`;
   }).join('');
-  const dl = ov.deadlines.slice(0,8).map(d=>`<li><span class="date-chip ${d.urgent?'urgent':''}">${dm(d.date)}</span><span>${esc(d.title)}<br><span class="muted small">${esc(d.detail||'')}</span></span><span></span></li>`).join('');
+  const dl = ov.deadlines.slice(0,7).map(d=>`<li><span class="date-chip ${d.urgent?'urgent':''}">${dm(d.date)}</span><span><b>${esc(d.title)}</b>${d.detail?`<br><span class="muted small">${esc(d.detail)}</span>`:''}</span></li>`).join('');
+  const props = ov.properties.map(p=>{ const r=repBy[p.id]||{costs_by_type:{}};
+    const costs=Object.entries(r.costs_by_type||{}).sort((a,b)=>b[1]-a[1]);
+    const totalCost=costs.reduce((a,[,v])=>a+v,0);
+    const area=(p.units||[]).map(u=>`${esc(u.name)} ${m2(u.area)}`).join(' · ');
+    return `<div class="card prop-card">
+      <div class="card-head" style="margin:0"><h3>${esc(p.name)}</h3><span class="meta">${area}</span>${r.gross_yield?`<span class="right badge">Rendite ${r.gross_yield.toFixed(2).replace('.',',')} %</span>`:''}</div>
+      <div class="top3"><div><span>Einnahmen ${HV.year}</span><b class="tnum">${E0(r.income)}</b></div><div><span>Kosten</span><b class="tnum">${E0(totalCost)}</b></div><div><span>Überschuss</span><b class="tnum ${r.surplus<0?'neg':'pos'}">${E0(r.surplus)}</b></div></div>
+      <div class="track" style="height:10px">${r.income>0?`<i style="width:${Math.min(100,totalCost/r.income*100)}%;background:var(--accent)"></i>`:''}</div>
+      <div class="cost-split">${costs.slice(0,4).map(([k,v])=>`<span>${esc(ctName(k))} ${E0(v)}</span>`).join('')||'<span>Noch keine Kosten gebucht</span>'}</div></div>`;
+  }).join('');
   main.innerHTML = hvNav('hv') + `
     ${steps.length?`<div class="banner"><p><b>So richtest du die Hausverwaltung ein:</b></p><ol class="steps">${steps.map(s=>`<li>${s}</li>`).join('')}</ol></div>`:''}
     ${ov.unassigned && ov.properties.length?`<div class="banner warn"><p>${ov.unassigned} Umsätze auf dem Mietkonto sind noch keinem Objekt bzw. keiner Kostenart zugeordnet.</p><a class="btn" href="#hv-umsaetze" data-hv="open-tx">Zuordnen</a></div>`:''}
-    <div class="row"><div class="monthnav"><button data-hv="m-prev" aria-label="Vorheriger Monat">‹</button><span class="mwrap"><strong>${monthLabel(HV.month)}</strong><span class="prange">Mieteingänge</span></span><button data-hv="m-next" aria-label="Nächster Monat">›</button></div></div>
-    <section class="stat-grid">
-      <div class="card"><h3>Soll ${monthLabel(HV.month)}</h3><div class="bignum">${E(t.soll)}</div><p class="note">Kaltmiete + NK-Vorauszahlung aller Verträge</p></div>
-      <div class="card"><h3>Eingegangen</h3><div class="bignum pos">${E(t.paid)}</div><p class="note">${t.soll?Math.round(t.paid/t.soll*100):0} % des Solls</p></div>
-      <div class="card"><h3>Offen in diesem Monat</h3><div class="bignum ${t.open?'neg':''}">${E(t.open)}</div><p class="note">inkl. noch nicht fälliger Mieten</p></div>
-      <div class="card"><h3>Rückstände gesamt</h3><div class="bignum ${t.arrears?'neg':''}">${E(t.arrears)}</div><p class="note">über alle Mieter und Monate</p></div>
+    <section class="kpi4">
+      <div class="tile"><span class="l">Soll ${monthLabel(HV.month)}</span><span class="n tnum">${E0(t.soll)}</span><span class="s">Kaltmiete + NK aller Verträge</span></div>
+      <div class="tile"><span class="l">Eingegangen</span><span class="n tnum pos">${E0(t.paid)}</span><span class="track"><i style="width:${t.soll?Math.min(100,t.paid/t.soll*100):0}%;background:var(--good)"></i></span></div>
+      <div class="tile"><span class="l">Offen in diesem Monat</span><span class="n tnum ${t.open?'neg':''}">${E0(t.open)}</span><span class="s">inkl. noch nicht fälliger Mieten</span></div>
+      <div class="tile dark"><span class="l">Rückstände gesamt</span><span class="n tnum ${t.arrears?'neg':''}">${E0(t.arrears)}</span><span class="s">über alle Mieter und Monate</span></div>
     </section>
-    <section class="second">
-      <section class="ledger"><header><h2>Mieten ${monthLabel(HV.month)}</h2><span class="sum">Zeile anklicken für Details</span></header>
-        <div class="tbl-scroll">${ov.leases.length?`<table><thead><tr><th>Mieter</th><th class="r">Soll</th><th class="r">Ist</th><th>Status</th><th class="r">Saldo</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">Noch keine Mietverträge.</div>'}</div></section>
-      <div class="card"><h3>Fristen &amp; Hinweise</h3>${dl?`<ul class="list">${dl}</ul>`:'<p class="muted">Keine Fristen in den nächsten zwei Monaten.</p>'}<p class="note"><a href="#hv-fristen">Alle Fristen</a></p></div>
-    </section>`;
+    <section class="grid3">
+      <section class="ledger span2"><header><h2>Mieter</h2><span class="sum">Zeile anklicken für das Mieterkonto</span></header>
+        <div class="tbl-scroll">${ov.leases.length?`<table><thead><tr><th>Mieter · Einheit</th><th class="r">Soll</th><th class="r">Ist</th><th>Status</th><th class="r">Saldo</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">Noch keine Mietverträge.</div>'}</div></section>
+      <div class="card dl"><div class="card-head" style="margin:0"><h3>Fristen &amp; Hinweise</h3><a class="right" href="#hv-fristen">Alle</a></div>${dl?`<ul>${dl}</ul>`:'<p class="muted">Keine Fristen in den nächsten zwei Monaten.</p>'}</div>
+    </section>
+    ${props?`<section class="prop-cards">${props}</section>`:''}`;
 }
 
 /* ---------- Tenants & leases ---------- */

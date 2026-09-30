@@ -77,11 +77,15 @@ async function route(){
   S.tab=['monat','umsaetze','abos','paar','konten'].includes(h)||AREAS.verwaltung.tabs.some(t=>t[0]===h)?h:'monat';
   if(!S.monthInit){ S.month=curMonth(); S.monthInit=true; }
   if(!S.month && S.tab!=='umsaetze') S.month=curMonth();
-  $('#top').hidden=false;
+  $('#top').hidden=false; $('#side').hidden=false;
   const isHV = S.tab.startsWith('hv');
   renderArea(isHV ? 'verwaltung' : 'haushalt');
-  $('#monthnav').hidden = S.tab==='abos' || S.tab==='konten' || isHV;
-  $('#mLabel').textContent = S.month ? monthLabel(S.month) : 'Alle Monate';
+  const monthTab = ['monat','umsaetze','paar'].includes(S.tab);
+  $('#monthnav').hidden = !(monthTab || S.tab==='hv');
+  const tabLabel = AREAS[S.area].tabs.find(t=>t[0]===S.tab)?.[1] || '';
+  $('#mLabel').textContent = S.tab==='hv' ? `Mieteingänge ${monthLabel(HV.month)}`
+    : monthTab ? (S.month ? monthLabel(S.month) : 'Alle Monate') : tabLabel;
+  $('#areaTitle').textContent = monthTab && S.tab!=='monat' ? `${AREAS[S.area].title} · ${tabLabel}` : AREAS[S.area].title;
   $('#pRange').textContent = '';
   if(!S.cats.length){ try{ S.cats = await api('GET','/api/categories'); }catch(e){ return toastError(e); } }
   try{
@@ -94,8 +98,24 @@ async function route(){
     else if(isHV) await viewHV(S.tab);
   }catch(e){ if(e.message!=='Bitte anmelden') main.innerHTML=`<div class="card empty">${esc(e.message)}</div>`; }
   updateSyncState();
+  renderSide();
 }
 window.addEventListener('hashchange', route);
+
+/* ---------- Sidebar: account balances ---------- */
+async function renderSide(){
+  try{
+    const accs = (await api('GET','/api/accounts')) || [];
+    const mine = accs.filter(a=>a.active && (a.book||'haushalt')===(S.area==='verwaltung'?'verwaltung':'haushalt'));
+    $('#sideAccTitle').textContent = S.area==='verwaltung' ? 'Mietkonten' : 'Konten';
+    $('#sideAccounts').innerHTML = mine.length
+      ? mine.map(a=>`<div><span title="${esc(a.bank)}">${esc(a.display_name||a.name)}</span><b class="${a.balance<0?'neg':''}">${a.balance!=null?E0(a.balance):'–'}</b></div>`).join('')
+      : '<div><span>Noch kein Konto</span></div>';
+    const next = mine.map(a=>a.schedule?.next).filter(Boolean).sort()[0];
+    S.nextSync = next || null;
+    updateSyncState();
+  }catch{}
+}
 
 /* ---------- Sections: household budget | property management ---------- */
 const AREAS = {
@@ -103,26 +123,42 @@ const AREAS = {
   verwaltung: {title:'Hausverwaltung', tabs:[['hv','Übersicht'],['hv-mieter','Mieter & Verträge'],['hv-objekte','Objekte'],['hv-nk','Nebenkosten'],['hv-umsaetze','Mietkonto'],['hv-fristen','Fristen'],['hv-konten','Konten']]},
 };
 S.lastTab = {haushalt:'monat', verwaltung:'hv'};
+const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICONS = {
+  monat: svg('<circle cx="12" cy="12" r="9"/><path d="M12 3v9l6 4"/>'),
+  umsaetze: svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
+  abos: svg('<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>'),
+  paar: svg('<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M15.5 14.6c2.9.2 5.5 2 5.5 5.4"/>'),
+  konten: svg('<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 21h18"/>'),
+  hv: svg('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
+  'hv-mieter': svg('<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 11h5M18.5 8.5v5"/>'),
+  'hv-objekte': svg('<path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-5h6v5"/>'),
+  'hv-nk': svg('<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7M9 8h3"/>'),
+  'hv-umsaetze': svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
+  'hv-fristen': svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
+  'hv-konten': svg('<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 21h18"/>'),
+};
+// Short labels for the mobile bottom bar
+const NAV_SHORT = {monat:'Budget', abos:'Abos', paar:'Paar', 'hv':'Übersicht', 'hv-mieter':'Mieter', 'hv-umsaetze':'Mietkonto'};
 function renderArea(area){
   S.area = area;
   S.lastTab[area] = S.tab;
   document.body.dataset.area = area;
-  $('#areaTitle').textContent = AREAS[area].title;
   document.title = AREAS[area].title + ' · Homestead';
   document.querySelectorAll('.areas a').forEach(a=>{
     const on = a.dataset.area===area;
     a.toggleAttribute('aria-current', on); if(on) a.setAttribute('aria-current','page');
     a.href = '#' + S.lastTab[a.dataset.area];
   });
-  $('#tabs').innerHTML = AREAS[area].tabs.map(([h,l])=>`<a href="#${h}"${h===S.tab?' aria-current="page"':''}>${esc(l)}</a>`).join('');
+  $('#tabs').innerHTML = AREAS[area].tabs.map(([h,l])=>`<a href="#${h}"${h===S.tab?' aria-current="page"':''}>${ICONS[h]||''}<span>${esc(NAV_SHORT[h]&&window.innerWidth<=900?NAV_SHORT[h]:l)}</span></a>`).join('');
 }
 const curMonth=()=> S.me?.current_month || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-$('#prevM').onclick=()=>{ S.month=shiftMonth(S.month||curMonth(),-1); route(); };
-$('#nextM').onclick=()=>{ S.month=shiftMonth(S.month||curMonth(),1); route(); };
+$('#prevM').onclick=()=>{ if(S.tab==='hv') HV.month=shiftMonth(HV.month,-1); else S.month=shiftMonth(S.month||curMonth(),-1); route(); };
+$('#nextM').onclick=()=>{ if(S.tab==='hv') HV.month=shiftMonth(HV.month,1); else S.month=shiftMonth(S.month||curMonth(),1); route(); };
 
 /* ---------- Login ---------- */
 function viewLogin(){
-  $('#top').hidden=true;
+  $('#top').hidden=true; $('#side').hidden=true;
   main.innerHTML=`<form class="card login" id="loginForm">
     <h2>Homestead</h2>
     <div class="field"><label for="pw">Passwort</label><input type="password" id="pw" autocomplete="current-password" required autofocus></div>
@@ -136,37 +172,14 @@ function viewLogin(){
 }
 
 /* ---------- Charts ---------- */
-function ringSVG(avail, income){
-  const r=74, c=2*Math.PI*r;
-  const frac = income>0 ? Math.min(1, Math.max(0, avail/income)) : 0;
-  return `<svg viewBox="0 0 180 180" role="img" aria-label="Verfügbar ${E(avail)}">
-    <circle cx="90" cy="90" r="${r}" fill="none" stroke="var(--track)" stroke-width="14"/>
-    <circle cx="90" cy="90" r="${r}" fill="none" stroke="${avail<0?'var(--bad)':'var(--accent)'}" stroke-width="14" stroke-linecap="${frac>0?'round':'butt'}"
-      stroke-dasharray="${(frac*c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 90 90)"/></svg>`;
-}
-function donutSVG(parts){
-  const total=parts.reduce((a,p)=>a+Math.max(0,p.v),0); const r=50, c=2*Math.PI*r; let off=0, segs='';
-  if(total>0) for(const p of parts){ if(p.v<=0) continue; const len=p.v/total*c;
-    segs+=`<circle cx="65" cy="65" r="${r}" fill="none" stroke="var(${p.color})" stroke-width="22" stroke-dasharray="${len.toFixed(2)} ${(c-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 65 65)"/>`; off+=len; }
-  return `<svg viewBox="0 0 130 130" role="img" aria-label="Verteilung"><circle cx="65" cy="65" r="${r}" fill="none" stroke="var(--track)" stroke-width="22"/>${segs}</svg>`;
-}
-function trendSVG(trend){
-  const W=640,H=220,pl=46,pr=8,pt=10,pb=26;
+function trendBars(trend){
+  if(!trend.length) return '<p class="muted">Noch keine Daten.</p>';
   const outOf=p=>p.bills+p.expenses+p.debts+p.savings;
   const max=Math.max(1,...trend.map(p=>Math.max(p.income,outOf(p))));
-  const step=Math.pow(10,Math.floor(Math.log10(max))); const top=Math.ceil(max/step)*step;
-  const y=v=>pt+(H-pt-pb)*(1-v/top); const bw=(W-pl-pr)/trend.length;
-  let g='';
-  for(let i=0;i<=4;i++){const v=top*i/4; g+=`<line x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line-2)"/><text x="${pl-6}" y="${y(v)+4}" text-anchor="end">${eur0.format(v/100).replace('€','').trim()}</text>`;}
-  trend.forEach((p,i)=>{
-    const x=pl+i*bw+bw*0.14, w=bw*0.34;
-    g+=`<rect x="${x}" y="${y(p.income)}" width="${w}" height="${Math.max(0,y(0)-y(p.income))}" fill="var(--c-income)" rx="2"><title>${monthLabel(p.month)}: Einnahmen ${E(p.income)}</title></rect>`;
-    let acc=0;
-    for(const k of ['bills','expenses','debts','savings']){ const v=Math.max(0,p[k]); if(!v) continue;
-      g+=`<rect x="${x+w+2}" y="${y(acc+v)}" width="${w}" height="${Math.max(0,y(acc)-y(acc+v))}" fill="var(${GROUPS[k].color})"><title>${monthLabel(p.month)}: ${GROUPS[k].label} ${E(v)}</title></rect>`; acc+=v; }
-    g+=`<text x="${pl+i*bw+bw/2}" y="${H-8}" text-anchor="middle">${MONTHS[+p.month.slice(5)-1].slice(0,3)}</text>`;
-  });
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Einnahmen und Ausgaben der letzten 12 Monate">${g}</svg>`;
+  const h=v=>Math.max(2,Math.round(Math.max(0,v)/max*118));
+  return `<div class="tbars">${trend.map(p=>`<div class="m${p.month===S.month?' cur':''}" title="${monthLabel(p.month)}: Einnahmen ${E(p.income)}, Ausgaben ${E(outOf(p))}">
+    <div class="pair"><i style="height:${h(p.income)}px;background:var(--c-income);opacity:.45"></i><i style="height:${h(outOf(p))}px;background:var(--accent)"></i></div>
+    <span class="lbl">${MONTHS[+p.month.slice(5)-1].slice(0,3)}</span></div>`).join('')}</div>`;
 }
 
 /* ---------- Monthly budget ---------- */
@@ -197,20 +210,27 @@ async function viewMonat(){
   if(offLines.length) banners.push(`<div class="banner warn"><p><b>${offLines.length===1?'1 Budget passt':offLines.length+' Budgets passen'} nicht zu den tatsächlichen Beträgen</b> (Durchschnitt der letzten ${avgN} Monate): ${offLines.slice(0,4).map(l=>`${esc(l.name)} ${E0(l.budget)} → Ø ${E0(l.avg)}`).join(', ')}${offLines.length>4?' …':''}. Einzeln in der Tabelle unten übernehmen oder alle neu berechnen.</p><button class="btn" data-act="rebuild-budgets">Aus Ist neu berechnen</button></div>`);
   if(ov.report.uncategorized>0) banners.push(`<div class="banner warn"><p>${ov.report.uncategorized} Umsätze in ${monthLabel(S.month)} konnte ich keiner Kategorie zuordnen.</p><a class="btn" href="#umsaetze" data-act="show-uncat">Ansehen</a></div>`);
 
-  const max=Math.max(1,...OUT.map(g=>Math.max(t[g].budget,t[g].ist)));
-  const bars=OUT.map(g=>{const b=t[g].budget,i=t[g].ist,over=b>0&&i>b;
-    return `<div class="bar-row"><div class="lbl">${GROUPS[g].label}</div><div class="bar-stack">
-      <div class="bar budget"><i style="width:${b/max*100}%;background:var(${GROUPS[g].color})"></i></div>
-      <div class="bar"><i style="width:${Math.max(0,i)/max*100}%;background:var(${over?'--bad':GROUPS[g].color})"></i></div>
-      <div class="bar-meta"><span>${E0(i)} von ${E0(b)}</span><span class="${over?'neg':''}">${b>0?Math.round(i/b*100)+' %':''}</span></div></div></div>`}).join('');
+  // Group totals as bars: budget marker + actual
+  const gbars=OUT.map(g=>{const b=t[g].budget,i=Math.max(0,t[g].ist),over=b>0&&i>b; const scale=Math.max(b,i,1);
+    return `<div class="gbar"><div class="h"><span>${GROUPS[g].label}</span><span class="${over?'neg':''}">${E0(i)} / ${E0(b)}</span></div>
+      <div class="track" title="${b>0?Math.round(i/b*100)+' % des Budgets':'kein Budget'}"><i style="width:${i/scale*100}%;background:var(${over?'--bad':GROUPS[g].color})"></i>${b>0&&i>b?`<span class="mark" style="left:${b/scale*100}%"></span>`:''}</div></div>`}).join('');
   const expLines = lines.filter(l=>OUT.includes(l.group) && l.ist>0).sort((a,b)=>b.ist-a.ist);
-  const top = expLines.slice(0,5), rest = expLines.slice(5).reduce((a,l)=>a+l.ist,0);
-  const pal=['--c-expenses','--c-bills','--c-debts','--c-savings','--c-income','--c-transfer'];
-  const parts = top.map((l,i)=>({v:l.ist,color:pal[i],label:l.name})); if(rest>0) parts.push({v:rest,color:pal[5],label:'Rest'});
-  const dist = parts.map(p=>`<li><i style="background:var(${p.color})"></i><span>${esc(p.label)}</span><em>${outIst>0?Math.round(p.v/outIst*100):0} %</em></li>`).join('');
+  const topMax = expLines[0]?.ist || 1;
+  const tops = expLines.slice(0,5).map(l=>`<div><span>${esc(l.name)}</span><span class="track"><i style="width:${l.ist/topMax*100}%;background:var(--ink)"></i></span><em>${outIst>0?Math.round(l.ist/outIst*100):0} %</em></div>`).join('');
 
   const forecastCard = forecastHTML(ov);
   if(ov.period.mode==='calendar' && ov.accounts.length) banners.push(`<div class="banner"><p>Noch kein regelmäßiges Gehalt erkannt, deshalb gilt vorerst der Kalendermonat. Sobald zwei bis drei Gehaltseingänge da sind, stellt die App auf „Gehalt bis Gehalt“ um. Unter <a href="#konten">Konten</a> kannst du das Gehalt auch selbst festlegen.</p></div>`);
+
+  // Hero: available amount and how the income was used
+  const base = Math.max(t.income.ist, outIst, 1);
+  const HCOL = {bills:'--h-bills', expenses:'--h-expenses', savings:'--h-savings', debts:'--h-debts'};
+  const stack = OUT.map(g=>`<i style="width:${Math.max(0,t[g].ist)/base*100}%;background:var(${HCOL[g]})" title="${GROUPS[g].label} ${E(t[g].ist)}"></i>`).join('');
+  const legend = OUT.map(g=>`<div><span><i style="background:var(${HCOL[g]})"></i>${GROUPS[g].label}</span><b>${E0(t[g].ist)}</b></div>`).join('');
+  const past = ov.forecast?.past;
+  const daysLeft = Math.max(0, Math.ceil((new Date(ov.period.end+'T23:59:59') - Date.now())/864e5));
+  const pct = t.income.ist>0 ? Math.round(avail/t.income.ist*100) : 0;
+  const chip = past ? '<span class="chip">Monat abgeschlossen</span>'
+    : `<span class="chip${ov.forecast?.projected<0?' bad':''}">noch ${daysLeft} ${daysLeft===1?'Tag':'Tage'}</span>`;
 
   const ledgers = ['income',...OUT].map(g=>{
     const ls=lines.filter(l=>l.group===g);
@@ -228,21 +248,22 @@ async function viewMonat(){
   }).join('');
 
   main.innerHTML = banners.join('') + `
-  <section class="overview">
-    <div class="card"><h3>Verfügbar</h3><div class="ring-wrap">
-      <div class="ring">${ringSVG(avail,t.income.ist)}<div class="center"><b class="${avail<0?'neg':''}">${E0(avail)}</b><small>von ${E0(t.income.ist)}</small></div></div>
-      <div class="kpis"><div class="kpi"><span>Ausgegeben</span><b>${E0(outIst)}</b></div>
-        <div class="kpi"><span>Geplant frei</span><b class="${plan<0?'neg':''}">${E0(plan)}</b></div>
-        <div class="kpi"><span>Sparquote</span><b>${quote} %</b></div></div></div></div>
-    <div class="card ov-wide"><h3>Budget vs. Ist</h3><div class="bars">${bars}</div><div class="legend"><span class="l-b">Budget</span><span>Ist</span></div></div>
-    <div class="card"><h3>Größte Posten</h3><div class="dist">${donutSVG(parts)}<ul>${dist||'<li><span></span><span class="muted">Keine Ausgaben</span></li>'}</ul></div></div>
-  </section>
-  <section class="second">
-    ${upcomingHTML(ov)}
+  <section class="grid3">
+    <div class="hero span2">
+      <div class="hero-top"><div><div class="lbl">Verfügbar in diesem Monat</div>
+        <div class="big ${avail<0?'neg':''}">${E0(avail)}</div>
+        <div class="sub">von ${E0(t.income.ist)} Einnahmen${t.income.ist>0?` · ${pct} % übrig`:''} · geplant frei ${E0(plan)} · Sparquote ${quote} %</div></div>${chip}</div>
+      <div class="stack" role="img" aria-label="Verwendung der Einnahmen">${stack}</div>
+      <div class="hero-legend">${legend}</div>
+    </div>
     ${forecastCard}
   </section>
-  <div class="card trend"><h3>Letzte 12 Monate</h3>${trendSVG(ov.trend)}
-    <div class="legend"><span style="--sw:var(--c-income)">Einnahmen</span>${['bills','expenses','debts','savings'].map(k=>`<span style="--sw:var(${GROUPS[k].color})">${GROUPS[k].label}</span>`).join('')}</div></div>
+  <section class="grid3">
+    <div class="span2">${upcomingHTML(ov)}</div>
+    <div class="card"><h3>Budget vs. Ist</h3><div class="gbars">${gbars}</div>
+      <div class="divider"></div><h3>Größte Posten</h3><div class="tops">${tops||'<span class="muted">Keine Ausgaben</span>'}</div></div>
+  </section>
+  <div class="card"><div class="card-head"><h3>Letzte 12 Monate</h3><div class="legend2"><span><i style="background:var(--c-income)"></i>Einnahmen</span><span><i style="background:var(--accent)"></i>Ausgaben gesamt</span></div></div>${trendBars(ov.trend)}</div>
   <section class="ledgers">${ledgers}</section>
   <p class="note">Budgets gelten für jeden Budgetmonat. Umbuchungen zwischen euren eigenen Konten zählen weder als Einnahme noch als Ausgabe.${avgN>0?` Ø = Monatsdurchschnitt der letzten ${avgN} Budgetmonate, Jahres- und Quartalszahlungen anteilig. <button class="linkbtn" data-act="rebuild-budgets">Alle Budgets aus Ist neu berechnen</button>`:''}</p>`;
 }
@@ -310,6 +331,7 @@ document.addEventListener('click', async e=>{
   const act=b.dataset.act;
   if(b.classList.contains('ist-link')){ S.txFilter={q:'',account:'',cat:String(b.dataset.cat),group:''}; location.hash='#umsaetze'; return; }
   try{
+    if(act==='up-all'){ S.upAll=!S.upAll; viewMonat(); return; }
     if(act==='suggest'){ const r=await api('POST','/api/budgets/suggest'); toast(`${r.updated} Budgets gesetzt`,3000); S.cats=[]; route(); }
     if(act==='rebuild-budgets'){
       if(b.dataset.confirm!=='1'){ b.dataset.confirm='1'; b.textContent='Alle Budgets überschreiben?'; return; }
@@ -341,55 +363,58 @@ document.addEventListener('click', async e=>{
 /* ---------- Period & forecast ---------- */
 function showPeriod(p){
   if(!p) return;
-  $('#pRange').textContent = `${dm(p.start)}–${dm(p.end)}${p.end.slice(0,4)!==p.start.slice(0,4)?p.end.slice(0,4):''}`;
+  $('#pRange').textContent = `${dm(p.start)} – ${dm(p.end)}${p.end.slice(0,4)}${p.mode==='salary'?' · von Gehalt zu Gehalt':''}`;
   $('#pRange').title = p.mode==='salary' ? `Budgetmonat von Gehalt zu Gehalt${p.salary_series?` (${p.salary_series})`:''}` : 'Kalendermonat';
 }
 function upcomingHTML(ov){
-  const items = ov.upcoming || [];
+  const items = [...(ov.upcoming || [])].sort((a,b)=>a.date.localeCompare(b.date));
   const accs = new Map(ov.accounts.map(a=>[a.id,a]));
-  const groups = new Map();
-  for(const i of items){ const k=i.account_id||0; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(i); }
   const sum = (arr,f)=>arr.filter(f).reduce((a,i)=>a+i.amount,0);
   const totalOut = -sum(items,i=>i.amount<0), totalIn = sum(items,i=>i.amount>0);
-  const order = [...groups.entries()].sort((a,b)=>sum(a[1],i=>i.amount<0)-sum(b[1],i=>i.amount<0));
-  const row = i=>`<tr><td class="tnum small">${dm(i.date)}</td><td>${esc(i.label)}<span class="muted small"> · ${i.category_id&&catById(i.category_id)?esc(catById(i.category_id).name):(KINDS[i.kind]||i.kind)}${i.status==='ueberfaellig'?' · <span class="neg">überfällig</span>':''}</span></td><td class="r tnum ${i.amount>0?'pos':''}">${E(i.amount)}</td></tr>`;
-  const blocks = order.map(([id,list])=>{
-    const a = accs.get(id); const out=-sum(list,i=>i.amount<0), inn=sum(list,i=>i.amount>0);
-    const bal = a && a.balance!=null ? a.balance : null; const after = bal!=null ? bal+inn-out : null;
-    return `<div class="up-acc">
-      <div class="up-head"><div><b>${a?esc(a.display_name||a.name):'Ohne Konto'}</b>${a?` <span class="muted small">${esc(a.bank)} · ${esc(nameOf(a.owner))}</span>`:''}</div>
-        ${bal!=null?`<span class="muted small">Stand ${E(bal)}</span>`:''}</div>
-      <table class="up"><tbody>${list.map(row).join('')}</tbody><tfoot>
-        <tr><td></td><td>Abbuchungen</td><td class="r tnum">${E(-out)}</td></tr>
-        ${inn?`<tr><td></td><td>Eingänge</td><td class="r tnum pos">${E(inn)}</td></tr>`:''}
-        ${after!=null?`<tr><td></td><td>Kontostand danach</td><td class="r tnum ${after<0?'neg':''}">${E(after)}</td></tr>`:''}
-      </tfoot></table></div>`;
+  const catOf = i => i.category_id&&catById(i.category_id) ? catById(i.category_id).name : (KINDS[i.kind]||i.kind);
+  const accName = id => { const a=accs.get(id); return a ? (a.display_name||a.name) : 'Ohne Konto'; };
+  const LIMIT=10, all=!!S.upAll;
+  const rows = items.slice(0, all?items.length:LIMIT).map(i=>`<div class="up-row"><span class="d">${dm(i.date)}</span>
+    <span class="t"><b>${esc(i.label)}</b> <span>· ${esc(catOf(i))}${i.manual?' · manuell':''}${i.status==='ueberfaellig'?' · <span class="neg">überfällig</span>':''}</span></span>
+    <span class="a">${esc(accName(i.account_id))}</span>
+    <span class="v tnum ${i.amount>0?'pos':''}">${E(i.amount)}</span></div>`).join('');
+  // Per account: debits, credits and the balance afterwards
+  const byAcc = new Map();
+  for(const i of items){ const k=i.account_id||0; if(!byAcc.has(k)) byAcc.set(k,[]); byAcc.get(k).push(i); }
+  const accCards = [...byAcc.entries()].map(([id,list])=>{
+    const a=accs.get(id); const out=-sum(list,i=>i.amount<0), inn=sum(list,i=>i.amount>0);
+    const bal=a&&a.balance!=null?a.balance:null; const after=bal!=null?bal+inn-out:null;
+    return `<div class="up-acc2"><b>${esc(accName(id))}</b>
+      <div class="row2"><span>Abbuchungen</span><span class="tnum">${E(-out)}</span></div>
+      ${inn?`<div class="row2"><span>Eingänge</span><span class="tnum pos">${E(inn)}</span></div>`:''}
+      ${after!=null?`<div class="row2"><span>Kontostand danach</span><b class="tnum ${after<0?'neg':''}">${E(after)}</b></div>`:''}</div>`;
   }).join('');
-  return `<div class="card"><h3>Demnächst abgebucht · 30 Tage</h3>
-    ${items.length?blocks+`<table class="up grand"><tbody><tr><td>Gesamt abgebucht</td><td class="r tnum"><b>${E(-totalOut)}</b></td></tr>${totalIn?`<tr><td>Gesamt Eingänge</td><td class="r tnum pos">${E(totalIn)}</td></tr>`:''}</tbody></table>`
+  return `<div class="card"><div class="card-head"><h3>Demnächst abgebucht</h3><span class="meta">nächste 30 Tage · alle Konten</span>
+      ${items.length?`<span class="right"><span class="muted">Summe </span><b class="tnum">${E(-totalOut)}</b>${totalIn?` · <span class="pos tnum">${E(totalIn)}</span>`:''}</span>`:''}</div>
+    ${items.length?`<div class="up-list">${rows}</div>${items.length>LIMIT?`<button class="linkbtn" data-act="up-all" style="margin-top:8px">${all?'Weniger anzeigen':`Alle ${items.length} Zahlungen anzeigen`}</button>`:''}<div class="up-accs">${accCards}</div>`
       :'<p class="muted">In den nächsten 30 Tagen ist nichts Wiederkehrendes fällig.</p>'}
     <p class="note">Aus erkannten Abos, Fixkosten, Krediten und von Hand angelegten Verträgen. <a href="#abos">Alle ansehen</a></p></div>`;
 }
 function forecastHTML(ov){
   const f=ov.forecast, k=f.open_by_kind||{};
   const nowFree=f.income_ist-f.out_ist;
-  const line=(label,v,cls='')=>`<tr><td>${label}</td><td class="r tnum ${cls}">${v}</td></tr>`;
+  const line=(label,v,cls='')=>`<div><span>${label}</span><b class="tnum ${cls}">${v}</b></div>`;
   const open=f.items.filter(i=>i.status!=='bezahlt');
   const paid=f.items.filter(i=>i.status==='bezahlt');
-  const item=i=>`<li><span class="date-chip">${dm(i.date)}</span><span>${esc(i.label)} <span class="muted small">· ${i.category_id&&catById(i.category_id)?esc(catById(i.category_id).name):(KINDS[i.kind]||i.kind)}${i.manual?' · manuell':''}${i.status==='ueberfaellig'?' · <span class="neg">überfällig</span>':''}</span></span><b class="tnum ${i.amount>0?'pos':''}">${E(i.amount)}</b></li>`;
-  if(f.past) return `<div class="card"><h3>Abgeschlossen</h3><p class="muted">Dieser Budgetmonat ist vorbei. Übrig geblieben: <b class="${nowFree<0?'neg':''}">${E(nowFree)}</b>.</p>
-    ${paid.length?`<ul class="list">${paid.map(item).join('')}</ul>`:''}</div>`;
+  const item=i=>`<li><span class="date-chip">${dm(i.date)}</span><span>${esc(i.label)} <span class="muted small">· ${i.category_id&&catById(i.category_id)?esc(catById(i.category_id).name):(KINDS[i.kind]||i.kind)}</span></span><b class="tnum ${i.amount>0?'pos':''}">${E(i.amount)}</b></li>`;
+  if(f.past) return `<div class="card"><h3>Abgeschlossen</h3><p class="muted" style="margin-top:0">Dieser Budgetmonat ist vorbei. Übrig geblieben: <b class="${nowFree<0?'neg':''}">${E(nowFree)}</b>.</p>
+    ${paid.length?`<ul class="list">${paid.slice(0,8).map(item).join('')}</ul>${paid.length>8?`<p class="note">und ${paid.length-8} weitere wiederkehrende Zahlungen</p>`:''}`:''}</div>`;
   const other=(k.sparen||0)+(k.sonstiges||0)+(k.einkommen||0);
   return `<div class="card"><h3>Prognose bis ${dm(ov.period.end)}</h3>
-    <table class="fc"><tbody>
+    <div class="fc-rows">
       ${line('Jetzt frei', E(nowFree), nowFree<0?'neg':'')}
       ${f.open_in?line('+ erwartete Einnahmen', E(f.open_in), 'pos'):''}
       ${(k.fixkosten||0)+(k.kredit||0)?line('− Fixkosten &amp; Kredite', E(-((k.fixkosten||0)+(k.kredit||0)))):''}
       ${k.abo?line('− Abos', E(-k.abo)):''}
       ${other?line('− Sparen &amp; Sonstiges', E(-other)):''}
-      ${f.budget_rest?line('− Rest-Budget variable Ausgaben', E(-f.budget_rest)):''}
-      <tr class="total"><td>Voraussichtlich frei</td><td class="r tnum ${f.projected<0?'neg':''}">${E(f.projected)}</td></tr>
-    </tbody></table>
+      ${f.budget_rest?line('− Rest-Budget variabel', E(-f.budget_rest)):''}
+    </div>
+    <div class="fc-total"><span>Voraussichtlich frei</span><b class="tnum ${f.projected<0?'neg':''}">${E(f.projected)}</b></div>
     <p class="note">${open.length?`${open.length} wiederkehrende Zahlungen bis ${dm(ov.period.end)} noch offen.`:`Bis ${dm(ov.period.end)} ist nichts Wiederkehrendes mehr offen.`} Abos ${E(ov.abo_monthly)}, Fixkosten und Kredite ${E(ov.fixed_monthly)} pro Monat.</p></div>`;
 }
 
@@ -640,7 +665,11 @@ let pollTimer;
 async function updateSyncState(){
   try{
     const s=await api('GET','/api/sync');
-    $('#syncState').textContent = s.running ? 'Abruf läuft …' : (s.last_finish && !s.last_finish.startsWith('0001') ? `Abgerufen ${ago(s.last_finish)}` : '') + ((n=>n?` · ${n} Problem${n>1?'e':''}`:'')((s.problems||[]).filter(p=>!p.book||p.book===S.area).length));
+    const probs=(s.problems||[]).filter(p=>!p.book||p.book===S.area).length;
+    const nextTxt = S.nextSync && new Date(S.nextSync)>new Date() ? ` · nächster ${new Date(S.nextSync).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}` : '';
+    const el=$('#syncState');
+    el.textContent = s.running ? 'Abruf läuft …' : (s.last_finish && !s.last_finish.startsWith('0001') ? `Abgerufen ${ago(s.last_finish)}${nextTxt}` : '') + (probs?` · ${probs} Problem${probs>1?'e':''}`:'');
+    el.classList.toggle('running', !!s.running); el.classList.toggle('problem', probs>0);
     return s;
   }catch{ return null; }
 }
