@@ -195,3 +195,24 @@ func keys(m map[string]Series) []string {
 	}
 	return k
 }
+
+func TestCleanRemittance(t *testing.T) {
+	cases := []struct{ in, want string }{
+		// ING: filled SEPA fields
+		{"mandatereference:E2026202101645044,creditorid:DE19ZZZ00000437097,remittanceinformation:01M2M65SN8M1KE9PYRSQ4XQMDD", "01M2M65SN8M1KE9PYRSQ4XQMDD"},
+		// empty fields, commas in the text itself stay
+		{"mandatereference:,creditorid:,remittanceinformation:Miete Oktober, Wohnung 3", "Miete Oktober, Wohnung 3"},
+		// other order and spacing
+		{"remittanceinformation:Rechnung 123,mandatereference:ABC,creditorid:DE12", "Rechnung 123"},
+		{"Mandatereference: X1 , Creditorid: DE99 , Remittanceinformation: Lastschrift Netflix", "Lastschrift Netflix"},
+		// classic SEPA tags
+		{"EREF+NOTPROVIDED MREF+M123 CRED+DE98ZZZ09999999999 SVWZ+Beitrag Oktober", "Beitrag Oktober"},
+		// plain text is left alone
+		{"Miete Oktober Wohnung EG", "Miete Oktober Wohnung EG"},
+	}
+	for _, c := range cases {
+		if got := CleanRemittance(c.in); got != c.want {
+			t.Errorf("CleanRemittance(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
