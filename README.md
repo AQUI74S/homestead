@@ -187,17 +187,24 @@ Project layout:
 
 ```
 cmd/homestead          entry point
-internal/api           HTTP API (JSON, amounts in cents) and auth
+internal/domain        shared vocabulary: books, groups, kinds, statuses, setting keys, dates, payment cycles
+internal/api           HTTP API (JSON, amounts in cents) and auth; all routes in routes.go
+internal/budget        budget months, budget vs. actual, averages, forecast, monthly overview
 internal/classify      categorization, merchant dictionary, recurrence detection
 internal/csvimport     bank CSV import
 internal/demo          demo data seeding
 internal/enablebanking Enable Banking client and simulated demo bank
-internal/forecast      forecast of recurring payments
 internal/hv            property management: assignment, rent ledger, settlement, deadlines
-internal/store         PostgreSQL access and migrations
-internal/syncer        periodic bank sync
-web                    static frontend (vanilla JS, embedded into the binary)
+internal/store         PostgreSQL access and migrations (SQL only, no business logic)
+internal/syncer        bank sync with request limits, reclassification
+web                    static frontend (vanilla JS modules, embedded into the binary)
 ```
+
+Values that are stored in the database or sent to the UI (books, groups, kinds, statuses,
+setting keys) are defined once in `internal/domain` and used everywhere else; SQL
+fragments that need them are built from these constants in `internal/store/sql.go`.
+API handlers return an `error` and are wrapped by `Server.handle`, which turns it into a
+JSON response (`badRequest(...)` → 400, `store.ErrNotFound` → 404, everything else → 500).
 
 **CI/CD:** every push and pull request runs gofmt, `go vet`, the tests (with a Postgres service) and a JavaScript syntax check. Pushes to `main` and version tags build a multi-arch image (`linux/amd64`, `linux/arm64`) and push it to GHCR. Create a release with `git tag v1.0.0 && git push --tags`.
 

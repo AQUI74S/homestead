@@ -30,33 +30,53 @@ type Config struct {
 	EBConsentMax time.Duration
 }
 
+// Defaults for settings that are not configured.
+const (
+	defaultAddr         = ":8080"
+	defaultPublicURL    = "http://localhost:8080"
+	defaultDatabaseURL  = "postgres://homestead:homestead@localhost:5432/homestead?sslmode=disable"
+	defaultSyncInterval = "6h"
+	defaultDailyLimit   = "4" // PSD2: 4 unattended requests per account and day
+	defaultEBKeyPath    = "/run/secrets/enablebanking.pem"
+	defaultEBAPIBase    = "https://api.enablebanking.com"
+	defaultEBCountry    = "DE"
+
+	// consentMax is the longest bank consent requested (PSD2 allows 180 days).
+	consentMax = 180 * 24 * time.Hour
+	// minSyncInterval: syncing more often would use up the banks' daily limits.
+	minSyncInterval = time.Hour
+	// minDailyLimit: one sync needs two requests (transactions and balances).
+	minDailyLimit = 2
+	// minSessionKeyLen is the minimum length of the cookie signing key.
+	minSessionKeyLen = 32
+)
+
 func Load() (Config, error) {
 	c := Config{
-		Addr:         setting("ADDR", ":8080"),
-		PublicURL:    strings.TrimRight(setting("PUBLIC_URL", "http://localhost:8080"), "/"),
-		DatabaseURL:  setting("DATABASE_URL", "postgres://homestead:homestead@localhost:5432/homestead?sslmode=disable"),
+		Addr:         setting("ADDR", defaultAddr),
+		PublicURL:    strings.TrimRight(setting("PUBLIC_URL", defaultPublicURL), "/"),
+		DatabaseURL:  setting("DATABASE_URL", defaultDatabaseURL),
 		Password:     setting("PASSWORD", ""),
 		SessionKey:   setting("SESSION_KEY", ""),
 		Demo:         isTrue(setting("DEMO", "")),
 		EBAppID:      env("EB_APP_ID", ""),
-		EBKeyPath:    env("EB_PRIVATE_KEY", "/run/secrets/enablebanking.pem"),
-		EBAPIBase:    strings.TrimRight(env("EB_API_BASE", "https://api.enablebanking.com"), "/"),
-		EBCountry:    env("EB_COUNTRY", "DE"),
-		EBConsentMax: 180 * 24 * time.Hour,
+		EBKeyPath:    env("EB_PRIVATE_KEY", defaultEBKeyPath),
+		EBAPIBase:    strings.TrimRight(env("EB_API_BASE", defaultEBAPIBase), "/"),
+		EBCountry:    env("EB_COUNTRY", defaultEBCountry),
+		EBConsentMax: consentMax,
 	}
 	var err error
-	if c.SyncInterval, err = time.ParseDuration(setting("SYNC_INTERVAL", "6h")); err != nil {
+	if c.SyncInterval, err = time.ParseDuration(setting("SYNC_INTERVAL", defaultSyncInterval)); err != nil {
 		return c, fmt.Errorf("HS_SYNC_INTERVAL: %w", err)
 	}
-	if c.BankDailyLimit, err = strconv.Atoi(setting("BANK_DAILY_LIMIT", "4")); err != nil || c.BankDailyLimit < 2 {
-		return c, fmt.Errorf("HS_BANK_DAILY_LIMIT: whole number of at least 2 expected")
+	if c.BankDailyLimit, err = strconv.Atoi(setting("BANK_DAILY_LIMIT", defaultDailyLimit)); err != nil || c.BankDailyLimit < minDailyLimit {
+		return c, fmt.Errorf("HS_BANK_DAILY_LIMIT: whole number of at least %d expected", minDailyLimit)
 	}
-	if c.SyncInterval < time.Hour {
-		// Without the user present, PSD2 allows only 4 fetches per day and account.
-		c.SyncInterval = time.Hour
+	if c.SyncInterval < minSyncInterval {
+		c.SyncInterval = minSyncInterval
 	}
-	if c.Password != "" && len(c.SessionKey) < 32 {
-		return c, fmt.Errorf("HS_SESSION_KEY must be at least 32 characters long when HS_PASSWORD is set")
+	if c.Password != "" && len(c.SessionKey) < minSessionKeyLen {
+		return c, fmt.Errorf("HS_SESSION_KEY must be at least %d characters long when HS_PASSWORD is set", minSessionKeyLen)
 	}
 	if !c.Demo && c.EBAppID == "" {
 		return c, fmt.Errorf("EB_APP_ID is missing (or set HS_DEMO=true to use the demo bank)")

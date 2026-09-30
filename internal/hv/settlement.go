@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/AQUI74S/homestead/internal/domain"
 	"github.com/AQUI74S/homestead/internal/store"
 )
 
@@ -59,9 +60,9 @@ type Settlement struct {
 func ComputeSettlement(p store.Property, leases []store.Lease, txns []store.HVTxn, manual []store.ManualCost, keys map[string]string, year int) Settlement {
 	from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := from.AddDate(1, 0, 0)
-	daysYear := int(to.Sub(from).Hours() / 24)
-	st := Settlement{PropertyID: p.ID, Year: year, From: from.Format("2006-01-02"), To: to.AddDate(0, 0, -1).Format("2006-01-02"),
-		Costs: []CostLine{}, Statements: []TenantStatement{}, Deadline: time.Date(year+1, 12, 31, 0, 0, 0, 0, time.UTC).Format("2006-01-02")}
+	daysYear := domain.DaysBetween(from, to)
+	st := Settlement{PropertyID: p.ID, Year: year, From: from.Format(domain.DateLayout), To: to.AddDate(0, 0, -1).Format(domain.DateLayout),
+		Costs: []CostLine{}, Statements: []TenantStatement{}, Deadline: settlementDeadline(year).Format(domain.DateLayout)}
 
 	area := map[int64]int64{}
 	for _, u := range p.Units {
@@ -143,17 +144,17 @@ func ComputeSettlement(p store.Property, leases []store.Lease, txns []store.HVTx
 		if o.l.End != "" && day(o.l.End).Before(e) {
 			e = day(o.l.End)
 		}
-		ts.From, ts.To = s.Format("2006-01-02"), e.Format("2006-01-02")
+		ts.From, ts.To = s.Format(domain.DateLayout), e.Format(domain.DateLayout)
 		for _, c := range st.Costs {
 			var f float64
 			var basis string
 			switch c.Key {
-			case "personen":
+			case KeyPersons:
 				if personDays > 0 {
 					f = float64(int64(o.l.Persons)*int64(o.days)) / float64(personDays)
 				}
 				basis = itoa(o.l.Persons) + " Pers. × " + itoa(o.days) + " Tage"
-			case "einheiten":
+			case KeyUnits:
 				if nUnits > 0 {
 					f = 1 / float64(nUnits) * float64(o.days) / float64(daysYear)
 				}

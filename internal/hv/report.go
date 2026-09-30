@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/AQUI74S/homestead/internal/domain"
 	"github.com/AQUI74S/homestead/internal/store"
 )
 
@@ -40,9 +41,9 @@ func PropertyReport(props []store.Property, leases []store.Lease, txns []store.H
 			}
 			ct, _ := TypeOf(t.CostType)
 			switch ct.Kind {
-			case "einnahme":
+			case KindIncome:
 				py.Income += t.AmountCents
-			case "kosten":
+			case KindCost:
 				py.Costs -= t.AmountCents
 				py.CostsByType[t.CostType] -= t.AmountCents
 				if ct.Umlage {
@@ -76,7 +77,7 @@ type Deadline struct {
 	Date       string `json:"date"`
 	Title      string `json:"title"`
 	Detail     string `json:"detail"`
-	Kind       string `json:"kind"` // nk | staffel | erhoehung | index | ende | kaution | rueckstand | manuell
+	Kind       string `json:"kind"` // Deadline*
 	PropertyID int64  `json:"property_id,omitempty"`
 	LeaseID    int64  `json:"lease_id,omitempty"`
 	ReminderID int64  `json:"reminder_id,omitempty"`
@@ -86,8 +87,8 @@ type Deadline struct {
 // Deadlines derives deadlines from leases, arrears and reminders.
 func Deadlines(props []store.Property, leases []store.Lease, ledgers map[int64]Ledger, reminders []store.Reminder, today time.Time) []Deadline {
 	out := []Deadline{}
-	ds := func(t time.Time) string { return t.Format("2006-01-02") }
-	soon := today.AddDate(0, 0, 30)
+	ds := func(t time.Time) string { return t.Format(domain.DateLayout) }
+	soon := today.AddDate(0, 0, soonDays)
 
 	// Previous year's Nebenkostenabrechnung (utility settlement): due at most 12 months after the end of the billing period
 	prev := today.Year() - 1
@@ -99,9 +100,9 @@ func Deadlines(props []store.Property, leases []store.Lease, ledgers map[int64]L
 			}
 		}
 		if has {
-			d := time.Date(prev+1, 12, 31, 0, 0, 0, 0, time.UTC)
+			d := settlementDeadline(prev)
 			out = append(out, Deadline{Date: ds(d), Title: "Nebenkostenabrechnung " + itoa(prev), Detail: p.Name + ": muss den Mietern bis zum 31.12. zugehen",
-				Kind: "nk", PropertyID: p.ID, Urgent: d.Before(today.AddDate(0, 2, 0))})
+				Kind: DeadlineSettlement, PropertyID: p.ID, Urgent: d.Before(today.AddDate(0, settlementUrgentMonths, 0))})
 		}
 	}
 	for _, l := range leases {
@@ -112,7 +113,7 @@ func Deadlines(props []store.Property, leases []store.Lease, ledgers map[int64]L
 		for _, s := range l.Steps {
 			if d := day(s.ValidFrom); d.After(today) {
 				out = append(out, Deadline{Date: s.ValidFrom, Title: "Mietänderung " + who, Detail: "neue Kaltmiete " + money(s.RentCold) + ", NK " + money(s.NKPrepay),
-					Kind: "staffel", LeaseID: l.ID, Urgent: d.Before(soon)})
+					Kind: DeadlineStep, LeaseID: l.ID, Urgent: d.Before(soon)})
 				break
 			}
 		}
@@ -121,36 +122,36 @@ func Deadlines(props []store.Property, leases []store.Lease, ledgers map[int64]L
 			base = day(l.LastIncrease)
 		}
 		switch l.RentType {
-		case "fest":
-			// Rent increase up to the local comparative rent (§558 BGB): effective at the earliest 15 months after the last increase
-			d := base.AddDate(0, 15, 0)
+		case RentFixed:
+			// Rent increase up to the local comparative rent (§558 BGB)
+			d := base.AddDate(0, increaseWaitMonths, 0)
 			dl := Deadline{Date: ds(d), Title: "Mieterhöhung möglich: " + who,
-				Detail: "Erhöhung auf die Vergleichsmiete frühestens ab diesem Datum wirksam (Verlangen 2 Monate vorher)", Kind: "erhoehung", LeaseID: l.ID}
+				Detail: "Erhöhung auf die Vergleichsmiete frühestens ab diesem Datum wirksam (Verlangen 2 Monate vorher)", Kind: DeadlineIncrease, LeaseID: l.ID}
 			if d.Before(today) {
 				dl.Date, dl.Detail = ds(today), "Erhöhung auf die Vergleichsmiete ist seit "+d.Format("02.01.2006")+" möglich (letzte Erhöhung bzw. Mietbeginn "+base.Format("02.01.2006")+")"
 			}
 			out = append(out, dl)
-		case "index":
-			d := base.AddDate(1, 0, 0)
-			dl := Deadline{Date: ds(d), Title: "Indexanpassung möglich: " + who, Detail: "frühestens 1 Jahr nach der letzten Anpassung", Kind: "index", LeaseID: l.ID}
+		case RentIndex:
+			d := base.AddDate(indexWaitYears, 0, 0)
+			dl := Deadline{Date: ds(d), Title: "Indexanpassung möglich: " + who, Detail: "frühestens 1 Jahr nach der letzten Anpassung", Kind: DeadlineIndex, LeaseID: l.ID}
 			if d.Before(today) {
 				dl.Date, dl.Detail = ds(today), "Anpassung an den Verbraucherpreisindex ist seit "+d.Format("02.01.2006")+" möglich"
 			}
 			out = append(out, dl)
 		}
 		if l.End != "" {
-			if d := day(l.End); d.Before(today.AddDate(0, 3, 0)) {
-				out = append(out, Deadline{Date: l.End, Title: "Mietende " + who, Detail: "Übergabe, Kaution abrechnen", Kind: "ende", LeaseID: l.ID, Urgent: true})
+			if d := day(l.End); d.Before(today.AddDate(0, leaseEndNoticeMonths, 0)) {
+				out = append(out, Deadline{Date: l.End, Title: "Mietende " + who, Detail: "Übergabe, Kaution abrechnen", Kind: DeadlineEnd, LeaseID: l.ID, Urgent: true})
 			}
 		}
 		if l.Deposit > 0 && !l.DepositPaid {
 			out = append(out, Deadline{Date: l.Start, Title: "Kaution offen: " + who, Detail: money(l.Deposit) + " noch nicht als bezahlt markiert",
-				Kind: "kaution", LeaseID: l.ID, Urgent: true})
+				Kind: DeadlineDeposit, LeaseID: l.ID, Urgent: true})
 		}
 		if lg, ok := ledgers[l.ID]; ok {
 			cold, nk := RentAt(l, today)
 			if lg.Balance > 0 {
-				d := Deadline{Date: ds(today), Title: "Mietrückstand " + who, Detail: money(lg.Balance) + " offen", Kind: "rueckstand", LeaseID: l.ID}
+				d := Deadline{Date: ds(today), Title: "Mietrückstand " + who, Detail: money(lg.Balance) + " offen", Kind: DeadlineArrears, LeaseID: l.ID}
 				if cold+nk > 0 && lg.Balance >= 2*(cold+nk) {
 					d.Detail += " (mind. zwei Monatsmieten)"
 					d.Urgent = true
@@ -163,7 +164,7 @@ func Deadlines(props []store.Property, leases []store.Lease, ledgers map[int64]L
 		if r.Done {
 			continue
 		}
-		d := Deadline{Date: r.DueDate, Title: r.Title, Kind: "manuell", ReminderID: r.ID, Urgent: day(r.DueDate).Before(soon)}
+		d := Deadline{Date: r.DueDate, Title: r.Title, Kind: DeadlineManual, ReminderID: r.ID, Urgent: day(r.DueDate).Before(soon)}
 		if r.LeaseID != nil {
 			d.LeaseID = *r.LeaseID
 		}
@@ -175,6 +176,10 @@ func Deadlines(props []store.Property, leases []store.Lease, ledgers map[int64]L
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Date < out[j].Date })
 	return out
 }
+
+// settlementDeadline returns the day by which the utility settlement for a year
+// must reach the tenants: 12 months after the end of the billing period (§556 BGB).
+func settlementDeadline(year int) time.Time { return time.Date(year+1, 12, 31, 0, 0, 0, 0, time.UTC) }
 
 func money(c int64) string {
 	neg := c < 0

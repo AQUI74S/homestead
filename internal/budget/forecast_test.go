@@ -1,4 +1,4 @@
-package forecast
+package budget
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ func TestCompute(t *testing.T) {
 	res := Compute(rec, day("2026-09-28"), day("2026-10-28"), day("2026-10-02"))
 	got := map[string]string{}
 	for _, it := range res.Items {
-		got[it.Label] += it.Status + "@" + it.Date + " "
+		got[it.Label] += string(it.Status) + "@" + it.Date + " "
 	}
 	want := map[string]string{
 		"Miete":             "bezahlt@2026-10-01 ",
@@ -70,7 +70,7 @@ func TestWeekendShift(t *testing.T) {
 }
 
 func TestDropNextSalary(t *testing.T) {
-	res := Result{OpenIn: 350000 + 210000, Items: []Item{
+	res := Forecast{OpenIn: 350000 + 210000, Items: []Item{
 		{RecurringID: 1, Date: "2026-08-29", Amount: 340000, Status: "bezahlt"},
 		{RecurringID: 1, Date: "2026-09-30", Amount: 340000, Status: "offen"}, // funds October
 		{RecurringID: 2, Date: "2026-09-15", Amount: 210000, Status: "offen"}, // second salary within September

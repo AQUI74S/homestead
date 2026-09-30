@@ -17,6 +17,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/AQUI74S/homestead/internal/budget"
 	"github.com/AQUI74S/homestead/internal/config"
 	eb "github.com/AQUI74S/homestead/internal/enablebanking"
 	"github.com/AQUI74S/homestead/internal/store"
@@ -163,7 +164,7 @@ func TestDemoEndToEnd(t *testing.T) {
 	do("GET", "/api/recurring", "", &rec)
 	kinds := map[string]string{}
 	for _, r := range rec {
-		kinds[r.Label] = r.Kind + "/" + r.CycleLabel
+		kinds[r.Label] = string(r.Kind) + "/" + r.CycleLabel
 		if r.Ended {
 			kinds[r.Label] += "/beendet"
 		}
@@ -188,7 +189,7 @@ func TestDemoEndToEnd(t *testing.T) {
 
 	// Overview of the current month
 	var ov struct {
-		Report     store.MonthReport
+		Report     budget.MonthReport
 		AboMonthly int64 `json:"abo_monthly"`
 	}
 	prev := time.Now().AddDate(0, -1, 0).Format("2006-01")

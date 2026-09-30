@@ -10,6 +10,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/AQUI74S/homestead/internal/budget"
+	"github.com/AQUI74S/homestead/internal/domain"
+	"github.com/AQUI74S/homestead/internal/hv"
 	"github.com/AQUI74S/homestead/internal/store"
 	"github.com/AQUI74S/homestead/internal/syncer"
 )
@@ -27,8 +30,11 @@ func Seed(ctx context.Context, st *store.Store, sy *syncer.Syncer, log *slog.Log
 	}
 	log.Info("demo: empty database, creating sample data")
 
-	for _, b := range []struct{ bank, book string }{
-		{"Demo-Sparkasse", "haushalt"}, {"Demo-Direktbank", "haushalt"}, {"Demo-Hausbank", "verwaltung"},
+	for _, b := range []struct {
+		bank string
+		book domain.Book
+	}{
+		{"Demo-Sparkasse", domain.BookHousehold}, {"Demo-Direktbank", domain.BookHousehold}, {"Demo-Hausbank", domain.BookProperty},
 	} {
 		state := randomState()
 		if _, err := st.CreatePendingConnection(ctx, b.bank, "DE", state, b.book); err != nil {
@@ -40,8 +46,8 @@ func Seed(ctx context.Context, st *store.Store, sy *syncer.Syncer, log *slog.Log
 	}
 
 	// assign accounts to persons (for the couple split)
-	_ = st.SetSetting(ctx, "name_a", "Alex")
-	_ = st.SetSetting(ctx, "name_b", "Kim")
+	_ = st.SetSetting(ctx, domain.SettingNameA, "Alex")
+	_ = st.SetSetting(ctx, domain.SettingNameB, "Kim")
 	accts, err := st.Accounts(ctx)
 	if err != nil {
 		return err
@@ -49,11 +55,11 @@ func Seed(ctx context.Context, st *store.Store, sy *syncer.Syncer, log *slog.Log
 	for _, a := range accts {
 		switch a.ProviderUID {
 		case "demo-giro-a":
-			err = st.UpdateAccount(ctx, a.ID, "A", "Girokonto Alex", true, a.Book)
+			err = st.UpdateAccount(ctx, a.ID, domain.OwnerA, "Girokonto Alex", true, a.Book)
 		case "demo-giro-b":
-			err = st.UpdateAccount(ctx, a.ID, "B", "Girokonto Kim", true, a.Book)
+			err = st.UpdateAccount(ctx, a.ID, domain.OwnerB, "Girokonto Kim", true, a.Book)
 		case "demo-joint":
-			err = st.UpdateAccount(ctx, a.ID, "", "Gemeinschaftskonto", true, a.Book)
+			err = st.UpdateAccount(ctx, a.ID, domain.OwnerJoint, "Gemeinschaftskonto", true, a.Book)
 		}
 		if err != nil {
 			return err
@@ -72,11 +78,11 @@ func Seed(ctx context.Context, st *store.Store, sy *syncer.Syncer, log *slog.Log
 		return err
 	}
 
-	pc, err := st.PeriodCalc(ctx)
+	periods, err := budget.LoadPeriods(ctx, st)
 	if err != nil {
 		return err
 	}
-	if _, _, err := st.SuggestBudgets(ctx, pc, time.Now(), false); err != nil {
+	if _, _, err := budget.SuggestBudgets(ctx, st, periods, time.Now(), false); err != nil {
 		return err
 	}
 	log.Info("demo: sample data created")
@@ -111,19 +117,19 @@ func seedHV(ctx context.Context, st *store.Store) error {
 
 	now := time.Now()
 	d := func(years, months int) string {
-		t := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(years, months, 0)
-		return t.Format("2006-01-02")
+		t := domain.FirstOfMonth(now).AddDate(years, months, 0)
+		return t.Format(domain.DateLayout)
 	}
 	// Anna Schmidt: tenant for years, last increase long ago → §558 BGB increase possible
 	if _, err := st.SaveLease(ctx, store.Lease{UnitID: eg, Tenant: store.Tenant{Name: "Anna Schmidt", IBAN: "DE21500105175555111111",
-		Email: "anna.schmidt@example.org"}, Start: d(-6, 0), RentCold: 80000, NKPrepay: 20000, DueDay: 3, Deposit: 240000,
-		DepositPaid: true, Persons: 1, RentType: "fest", LastIncrease: d(-2, -3)}); err != nil {
+		Email: "anna.schmidt@example.org"}, Start: d(-6, 0), RentCold: 80000, NKPrepay: 20000, DueDay: hv.DefaultDueDay, Deposit: 240000,
+		DepositPaid: true, Persons: 1, RentType: hv.RentFixed, LastIncrease: d(-2, -3)}); err != nil {
 		return err
 	}
 	// Yilmaz family: Staffelmiete (graduated rent), next step in a few months; one partial payment in the history
 	yil, err := st.SaveLease(ctx, store.Lease{UnitID: og, Tenant: store.Tenant{Name: "Mehmet Yilmaz", IBAN: "DE44700202700666222222",
-		Phone: "0612 3456789"}, Start: d(-3, 0), RentCold: 100000, NKPrepay: 25000, DueDay: 3, Deposit: 300000,
-		DepositPaid: true, Persons: 4, RentType: "staffel"})
+		Phone: "0612 3456789"}, Start: d(-3, 0), RentCold: 100000, NKPrepay: 25000, DueDay: hv.DefaultDueDay, Deposit: 300000,
+		DepositPaid: true, Persons: 4, RentType: hv.RentStaged})
 	if err != nil {
 		return err
 	}
@@ -132,8 +138,8 @@ func seedHV(ctx context.Context, st *store.Store) error {
 	}
 	// Lukas Weber: Indexmiete (index-linked rent), deposit still open, last rent missing
 	if _, err := st.SaveLease(ctx, store.Lease{UnitID: w4, Tenant: store.Tenant{Name: "Lukas Weber", IBAN: "DE89370400440777333333"},
-		Start: d(-1, -6), RentCold: 62000, NKPrepay: 16000, DueDay: 3, Deposit: 186000, DepositPaid: false, Persons: 1,
-		RentType: "index"}); err != nil {
+		Start: d(-1, -6), RentCold: 62000, NKPrepay: 16000, DueDay: hv.DefaultDueDay, Deposit: 186000, DepositPaid: false, Persons: 1,
+		RentType: hv.RentIndex}); err != nil {
 		return err
 	}
 
@@ -147,7 +153,7 @@ func seedHV(ctx context.Context, st *store.Store) error {
 			return err
 		}
 	}
-	due := now.AddDate(0, 0, 10).Format("2006-01-02")
+	due := now.AddDate(0, 0, 10).Format(domain.DateLayout)
 	if _, err := st.AddReminder(ctx, store.Reminder{PropertyID: &tal, DueDate: due, Title: "Rauchmelder-Wartung Talstraße 3 beauftragen"}); err != nil {
 		return err
 	}

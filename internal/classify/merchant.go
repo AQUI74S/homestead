@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/AQUI74S/homestead/internal/domain"
 )
 
 var (
@@ -83,9 +85,7 @@ func Merchant(counterparty, remittance string) (display, key string) {
 // NormalizeKey normalizes a name: lowercase, without digits, legal forms and punctuation,
 // at most three words.
 func NormalizeKey(s string) string {
-	s = strings.ToLower(s)
-	s = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss").Replace(s)
-	s = reDigits.ReplaceAllString(s, " ")
+	s = reDigits.ReplaceAllString(domain.Fold(s), " ")
 	s = reNonAlnum.ReplaceAllString(s, " ")
 	var out []string
 	for _, w := range strings.Fields(s) {

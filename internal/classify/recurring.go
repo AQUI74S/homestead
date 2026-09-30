@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/AQUI74S/homestead/internal/domain"
 )
 
 // Point is a transaction as needed by recurring detection.
@@ -16,63 +18,55 @@ type Point struct {
 	MerchantKey string
 	Merchant    string
 	Slug        string // category after Classify
-	Group       string // income | bills | expenses | savings | debts | transfer
+	Group       domain.Group
 	AccountID   int64
 }
 
 // Series is a detected recurring payment.
 type Series struct {
 	Key         string // merchant_key, with "#<cent>" for amount clusters
-	Direction   string // in | out
+	Direction   domain.Direction
 	Label       string
-	CycleDays   int
+	CycleDays   domain.Cycle
 	MedianCents int64 // amount per payment (positive)
 	LastCents   int64
 	First, Last time.Time
 	Next        time.Time
 	Count       int
 	Ended       bool
-	Kind        string // abo | fixkosten | einkommen | kredit | sparen | sonstiges
+	Kind        domain.Kind
 	Slug        string // category of the most recent payment
 	AccountID   int64  // account of the most recent payment
 	TxnIDs      []int64
 }
 
 // MonthlyCents converts the amount to a monthly value.
-func (s Series) MonthlyCents() int64 {
-	perYear := map[int]float64{7: 52, 14: 26, 30: 12, 61: 6, 91: 4, 182: 2, 365: 1}[s.CycleDays]
-	if perYear == 0 {
-		perYear = 365 / float64(s.CycleDays)
-	}
-	return int64(math.Round(float64(s.MedianCents) * perYear / 12))
+func (s Series) MonthlyCents() int64 { return s.CycleDays.MonthlyCents(s.MedianCents) }
+
+// cycleRule says how a cycle is recognized: gaps may deviate by tol days, and at
+// least minCount payments are needed.
+type cycleRule struct {
+	days          domain.Cycle
+	tol, minCount int
 }
 
-type cycle struct{ days, tol, minCount int }
-
-var cycles = []cycle{
-	{7, 2, 4}, {14, 3, 3}, {30, 6, 3}, {61, 8, 3}, {91, 14, 3}, {182, 21, 2}, {365, 35, 2},
+var cycleRules = []cycleRule{
+	{domain.Weekly, 2, 4}, {domain.Biweekly, 3, 3}, {domain.Monthly, 6, 3}, {domain.Bimonthly, 8, 3},
+	{domain.Quarterly, 14, 3}, {domain.HalfYearly, 21, 2}, {domain.Yearly, 35, 2},
 }
 
-// CycleLabel returns a German label for the cycle length.
-func CycleLabel(days int) string {
-	switch days {
-	case 7:
-		return "Wöchentlich"
-	case 14:
-		return "Alle 2 Wochen"
-	case 30:
-		return "Monatlich"
-	case 61:
-		return "Alle 2 Monate"
-	case 91:
-		return "Vierteljährlich"
-	case 182:
-		return "Halbjährlich"
-	case 365:
-		return "Jährlich"
-	}
-	return fmt.Sprintf("Alle %d Tage", days)
-}
+// Thresholds of the detection.
+const (
+	minExactShare     = 0.6   // share of gaps that must match the cycle ...
+	minRegularShare   = 0.8   // ... or match it with one skipped payment
+	amountTolShare    = 0.2   // amounts may deviate ±20 % from the median ...
+	amountTolMinCents = 300   // ... or at least ±3 €
+	minStableShare    = 0.7   // share of amounts within that tolerance
+	fixedAmountShare  = 0.03  // "same amount" for subscriptions: ±3 % ...
+	fixedAmountMin    = 50    // ... or at least ±0.50 €
+	maxAboCents       = 15000 // unknown subscriptions cost at most 150 €
+	minSalaryCents    = 30000 // regular monthly income from 300 € counts as salary
+)
 
 // DetectRecurring finds recurring payments. Each merchant is checked as a whole
 // first; if that fails, individual amount clusters are checked (e.g. Amazon Prime among
@@ -80,18 +74,16 @@ func CycleLabel(days int) string {
 func DetectRecurring(points []Point, today time.Time) []Series {
 	groups := map[string][]Point{}
 	for _, p := range points {
-		if p.MerchantKey == "" || p.Group == "transfer" || p.AmountCents == 0 {
+		if p.MerchantKey == "" || p.Group == domain.GroupTransfer || p.AmountCents == 0 {
 			continue
 		}
-		dir := "out"
-		if p.AmountCents > 0 {
-			dir = "in"
-		}
-		groups[dir+"|"+p.MerchantKey] = append(groups[dir+"|"+p.MerchantKey], p)
+		gk := string(domain.DirectionOf(p.AmountCents)) + "|" + p.MerchantKey
+		groups[gk] = append(groups[gk], p)
 	}
 	var out []Series
 	for gk, pts := range groups {
-		dir, key, _ := strings.Cut(gk, "|")
+		d, key, _ := strings.Cut(gk, "|")
+		dir := domain.Direction(d)
 		if s, ok := detect(pts, key, dir, today); ok {
 			out = append(out, s)
 			continue
@@ -114,7 +106,7 @@ func DetectRecurring(points []Point, today time.Time) []Series {
 	return out
 }
 
-func detect(pts []Point, key, dir string, today time.Time) (Series, bool) {
+func detect(pts []Point, key string, dir domain.Direction, today time.Time) (Series, bool) {
 	sort.Slice(pts, func(i, j int) bool { return pts[i].Date.Before(pts[j].Date) })
 	// one payment per day
 	var uniq []Point
@@ -132,10 +124,10 @@ func detect(pts []Point, key, dir string, today time.Time) (Series, bool) {
 		gaps = append(gaps, uniq[i].Date.Sub(uniq[i-1].Date).Hours()/24)
 	}
 	med := median(gaps)
-	var cyc *cycle
-	for i := range cycles {
-		if math.Abs(med-float64(cycles[i].days)) <= float64(cycles[i].tol) {
-			cyc = &cycles[i]
+	var cyc *cycleRule
+	for i := range cycleRules {
+		if math.Abs(med-float64(cycleRules[i].days)) <= float64(cycleRules[i].tol) {
+			cyc = &cycleRules[i]
 			break
 		}
 	}
@@ -152,23 +144,23 @@ func detect(pts []Point, key, dir string, today time.Time) (Series, bool) {
 			skipped++
 		}
 	}
-	if float64(exact) < 0.6*float64(len(gaps)) || float64(exact+skipped) < 0.8*float64(len(gaps)) {
+	if float64(exact) < minExactShare*float64(len(gaps)) || float64(exact+skipped) < minRegularShare*float64(len(gaps)) {
 		return Series{}, false
 	}
-	// amount stability: ±20 % or at least ±3 € around the median
+	// amount stability around the median
 	amts := make([]float64, len(uniq))
 	for i, p := range uniq {
 		amts[i] = float64(abs(p.AmountCents))
 	}
 	mA := median(amts)
-	tolA := math.Max(0.2*mA, 300)
+	tolA := math.Max(amountTolShare*mA, amountTolMinCents)
 	stable := 0
 	for _, a := range amts {
 		if math.Abs(a-mA) <= tolA {
 			stable++
 		}
 	}
-	if float64(stable) < 0.7*float64(len(amts)) {
+	if float64(stable) < minStableShare*float64(len(amts)) {
 		return Series{}, false
 	}
 	last := uniq[len(uniq)-1]
@@ -177,12 +169,7 @@ func detect(pts []Point, key, dir string, today time.Time) (Series, bool) {
 		MedianCents: int64(math.Round(mA)), LastCents: abs(last.AmountCents),
 		First: uniq[0].Date, Last: last.Date, Count: len(uniq), Slug: last.Slug, AccountID: last.AccountID,
 	}
-	s.Next = s.Last.AddDate(0, 0, cyc.days)
-	if cyc.days == 30 {
-		s.Next = s.Last.AddDate(0, 1, 0)
-	} else if cyc.days == 365 {
-		s.Next = s.Last.AddDate(1, 0, 0)
-	}
+	s.Next = cyc.days.Step(s.Last, 1)
 	s.Ended = today.After(s.Next.AddDate(0, 0, 2*cyc.tol))
 	for _, p := range pts {
 		s.TxnIDs = append(s.TxnIDs, p.TxnID)
@@ -192,44 +179,48 @@ func detect(pts []Point, key, dir string, today time.Time) (Series, bool) {
 }
 
 // kindFor derives the kind of recurring payment from category and amount history.
-func kindFor(s Series, group string, amts []float64, med float64) string {
-	if s.Direction == "in" {
-		return "einkommen"
+func kindFor(s Series, group domain.Group, amts []float64, med float64) domain.Kind {
+	if s.Direction == domain.DirectionIn {
+		return domain.KindIncome
 	}
 	switch s.Slug {
-	case "abos", "mitgliedschaft":
-		return "abo"
-	case "kredite", "kreditkarte":
-		return "kredit"
-	case "sparen":
-		return "sparen"
+	case domain.SlugSubscriptions, domain.SlugMemberships:
+		return domain.KindSubscription
+	case domain.SlugLoans, domain.SlugCreditCard:
+		return domain.KindLoan
+	case domain.SlugSavings:
+		return domain.KindSavings
 	}
 	switch group {
-	case "bills":
-		return "fixkosten"
-	case "debts":
-		return "kredit"
-	case "savings":
-		return "sparen"
+	case domain.GroupBills:
+		return domain.KindFixedCost
+	case domain.GroupDebts:
+		return domain.KindLoan
+	case domain.GroupSavings:
+		return domain.KindSavings
 	}
 	if IsAboMerchant(s.Label) {
-		return "abo"
+		return domain.KindSubscription
 	}
 	// Unknown merchant, fixed small amount at a fixed interval: very likely a subscription
-	if s.Slug == "sonstiges" || s.Slug == "online-shopping" || s.Slug == "freizeit" {
+	if aboCandidateSlugs[s.Slug] {
 		exact := true
 		for _, a := range amts {
-			if math.Abs(a-med) > math.Max(0.03*med, 50) {
+			if math.Abs(a-med) > math.Max(fixedAmountShare*med, fixedAmountMin) {
 				exact = false
 				break
 			}
 		}
-		if exact && med <= 15000 && s.CycleDays >= 30 {
-			return "abo"
+		if exact && med <= maxAboCents && s.CycleDays >= domain.Monthly {
+			return domain.KindSubscription
 		}
 	}
-	return "sonstiges"
+	return domain.KindOther
 }
+
+// aboCandidateSlugs are categories in which an unknown fixed recurring amount is
+// most likely a subscription.
+var aboCandidateSlugs = map[string]bool{domain.SlugOther: true, domain.SlugOnlineShopping: true, domain.SlugLeisure: true}
 
 func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()
@@ -266,25 +257,24 @@ type Refinement struct {
 
 // Refine derives better categories for auto-classified transactions from series:
 // regular larger incoming payments become salary, unknown subscriptions "Abos & Streaming".
-func Refine(series []Series, slugOf map[int64]string, sourceOf map[int64]string) []Refinement {
+func Refine(series []Series, slugOf map[int64]string, sourceOf map[int64]domain.Source) []Refinement {
 	var out []Refinement
 	for _, s := range series {
 		var slug, reason string
 		switch {
-		case s.Direction == "in" && s.CycleDays == 30 && s.MedianCents >= 30000:
-			slug, reason = "gehalt", "Regelmäßiger monatlicher Eingang"
-		case s.Direction == "out" && s.Kind == "abo":
-			slug, reason = "abos", "Wiederkehrend ("+CycleLabel(s.CycleDays)+", gleicher Betrag)"
+		case s.Direction == domain.DirectionIn && s.CycleDays == domain.Monthly && s.MedianCents >= minSalaryCents:
+			slug, reason = domain.SlugSalary, "Regelmäßiger monatlicher Eingang"
+		case s.Direction == domain.DirectionOut && s.Kind == domain.KindSubscription:
+			slug, reason = domain.SlugSubscriptions, "Wiederkehrend ("+s.CycleDays.Label()+", gleicher Betrag)"
 		default:
 			continue
 		}
 		for _, id := range s.TxnIDs {
-			if sourceOf[id] != "auto" {
+			if sourceOf[id] != domain.SourceAuto {
 				continue
 			}
 			cur := slugOf[id]
-			if cur == "einnahmen-sonst" && slug == "gehalt" ||
-				(cur == "sonstiges" || cur == "online-shopping" || cur == "freizeit") && slug == "abos" {
+			if cur == domain.SlugOtherIncome && slug == domain.SlugSalary || aboCandidateSlugs[cur] && slug == domain.SlugSubscriptions {
 				out = append(out, Refinement{TxnID: id, Slug: slug, Reason: reason})
 			}
 		}

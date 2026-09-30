@@ -24,6 +24,11 @@ import (
 // version is set at build time via -ldflags "-X main.version=...".
 var version = "dev"
 
+const (
+	readHeaderTimeout = 10 * time.Second
+	shutdownTimeout   = 10 * time.Second
+)
+
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(log); err != nil {
@@ -76,11 +81,11 @@ func run(log *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           api.New(cfg, st, provider, sy, log, web.FS).Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	go func() {
 		<-ctx.Done()
-		shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		_ = srv.Shutdown(shCtx)
 	}()

@@ -76,13 +76,13 @@ func (d *Demo) Balances(ctx context.Context, uid string) ([]Balance, error) {
 		}
 		bal += c
 	}
-	return []Balance{{Name: "Buchungssaldo", BalanceType: "CLBD", BalanceAmount: Amount{Currency: "EUR", Amount: centsStr(bal)}, ReferenceDate: d.now().Format("2006-01-02")}}, nil
+	return []Balance{{Name: "Buchungssaldo", BalanceType: "CLBD", BalanceAmount: Amount{Currency: "EUR", Amount: centsStr(bal)}, ReferenceDate: d.now().Format(apiDate)}}, nil
 }
 
 func (d *Demo) Transactions(ctx context.Context, uid string, from, to time.Time, cont string) (*TransactionPage, error) {
 	var sel []Transaction
 	for _, t := range d.all(uid) {
-		bd, _ := time.Parse("2006-01-02", t.BookingDate)
+		bd, _ := time.Parse(apiDate, t.BookingDate)
 		if (!from.IsZero() && bd.Before(from)) || (!to.IsZero() && bd.After(to)) {
 			continue
 		}
@@ -102,7 +102,7 @@ func (d *Demo) Transactions(ctx context.Context, uid string, from, to time.Time,
 }
 
 func (d *Demo) all(uid string) []Transaction {
-	day := d.now().Format("2006-01-02")
+	day := d.now().Format(apiDate)
 	if t, ok := d.cache[uid+day]; ok {
 		return t
 	}
@@ -136,8 +136,8 @@ func (g *gen) add(date time.Time, cents int64, party, iban, remit, code string) 
 	}
 	t := Transaction{
 		EntryReference:        fmt.Sprintf("%s-%s-%04d", g.uid, date.Format("20060102"), g.n),
-		BookingDate:           date.Format("2006-01-02"),
-		ValueDate:             date.Format("2006-01-02"),
+		BookingDate:           date.Format(apiDate),
+		ValueDate:             date.Format(apiDate),
 		Status:                "BOOK",
 		CreditDebitIndicator:  ind,
 		TransactionAmount:     Amount{Currency: "EUR", Amount: centsStr(cents)},
@@ -320,7 +320,7 @@ func generate(uid string, now time.Time) []Transaction {
 	}
 	var out []Transaction
 	for _, t := range g.out {
-		bd, _ := time.Parse("2006-01-02", t.BookingDate)
+		bd, _ := time.Parse(apiDate, t.BookingDate)
 		if !bd.After(today) {
 			out = append(out, t)
 		}

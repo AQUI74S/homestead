@@ -7,7 +7,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/AQUI74S/homestead/internal/domain"
 )
+
+// apiDate is the date format of the Enable Banking API (ISO 8601 day).
+const apiDate = "2006-01-02"
 
 // Normalized is a transaction in the format stored in the database.
 type Normalized struct {
@@ -71,11 +76,11 @@ func Normalize(t Transaction, seen map[string]int) (Normalized, error) {
 	n.Pending = strings.EqualFold(t.Status, "PDNG")
 
 	date := firstNonEmpty(t.BookingDate, t.ValueDate, t.TransactionDate)
-	if n.BookingDate, err = time.Parse("2006-01-02", date); err != nil {
+	if n.BookingDate, err = time.Parse(apiDate, date); err != nil {
 		return n, fmt.Errorf("Buchungsdatum %q: %w", date, err)
 	}
 	if t.ValueDate != "" {
-		if vd, err := time.Parse("2006-01-02", t.ValueDate); err == nil {
+		if vd, err := time.Parse(apiDate, t.ValueDate); err == nil {
 			n.ValueDate = &vd
 		}
 	}
@@ -91,7 +96,7 @@ func Normalize(t Transaction, seen map[string]int) (Normalized, error) {
 		n.Counterparty = strings.TrimSpace(party.Name)
 	}
 	if acct != nil {
-		n.CounterpartyIBAN = strings.ToUpper(strings.ReplaceAll(acct.IBAN, " ", ""))
+		n.CounterpartyIBAN = domain.NormIBAN(acct.IBAN)
 	}
 	n.Remittance = strings.TrimSpace(strings.Join(t.RemittanceInformation, " "))
 	if n.Remittance == "" {

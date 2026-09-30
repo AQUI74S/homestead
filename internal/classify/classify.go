@@ -3,6 +3,8 @@ package classify
 import (
 	"regexp"
 	"strings"
+
+	"github.com/AQUI74S/homestead/internal/domain"
 )
 
 // Txn is the classifier's view of a transaction.
@@ -16,26 +18,43 @@ type Txn struct {
 	Merchant         string // set by Classify
 	MerchantKey      string // set by Classify
 	Slug             string // current or new category
-	Source           string // auto | rule | manual
+	Source           domain.Source
 	Reason           string
-	Book             string // book of the own account: haushalt | verwaltung
+	Book             domain.Book // book of the own account
 }
 
 // Rule is a user rule: substring in a field -> category.
 type Rule struct {
-	Field   string // merchant | counterparty | iban | remittance
+	Field   domain.RuleField
 	Pattern string
 	Slug    string
 }
 
 var reMatchClean = regexp.MustCompile(`[^a-z0-9&+]+`)
 
+const (
+	// bankCodeCash is the ISO 20022 bank transaction code of a cash withdrawal.
+	bankCodeCash = "CWDL"
+	// cashMerchant names withdrawals whose payee is only a bank placeholder.
+	cashMerchant, cashMerchantKey = "Geldautomat", "geldautomat"
+)
+
+// marketplaces sell many kinds of things; for them the remittance text (e.g.
+// "Prime", "iCloud") decides the category rather than the payee name.
+var marketplaces = []string{"amazon", "apple", "google"}
+
+// utilitySlugs are categories of energy suppliers that often deliver several
+// utilities; the remittance text then decides which one.
+var utilitySlugs = map[string]bool{"strom": true, "gas": true, "wasser": true}
+
+// accountNameWords mark an account name as a product name rather than a person.
+var accountNameWords = []string{"konto", "giro", "spar", "tagesgeld", "depot", "karte", "card", "gemeinschaft", "plus", "komfort",
+	"online", "classic", "premium", "basis", "direkt", "business", "privat"}
+
 // normText prepares text for matching: lowercase, umlauts spelled out,
 // special characters turned into spaces, wrapped in spaces.
 func normText(s string) string {
-	s = strings.ToLower(s)
-	s = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss").Replace(s)
-	s = reMatchClean.ReplaceAllString(s, " ")
+	s = reMatchClean.ReplaceAllString(domain.Fold(s), " ")
 	return " " + strings.Join(strings.Fields(s), " ") + " "
 }
 
@@ -82,34 +101,32 @@ func matchKeywords(text string, rules []keywordRule) (string, string, bool) {
 
 // Context holds what classification needs besides the transaction.
 type Context struct {
-	OwnIBANs map[string]bool   // IBANs of own accounts (no spaces, uppercase)
-	IBANBook map[string]string // IBAN -> book (haushalt | verwaltung)
-	OwnNames []string          // account holder names (normalized), e.g. "max mustermann"
+	OwnIBANs map[string]bool        // IBANs of own accounts (no spaces, uppercase)
+	IBANBook map[string]domain.Book // IBAN -> book of the own account
+	OwnNames []string               // account holder names (normalized), e.g. "max mustermann"
 	Rules    []Rule
 }
-
-func cleanIBAN(s string) string { return strings.ToUpper(strings.ReplaceAll(s, " ", "")) }
 
 // Classify sets Merchant, MerchantKey and – except for manually categorized transactions –
 // Slug, Source and Reason. Recurring patterns refine the result afterwards (see Refine).
 func Classify(t *Txn, ctx Context) {
 	t.Merchant, t.MerchantKey = Merchant(t.Counterparty, t.Remittance)
 	if GenericCounterparty(t.Counterparty) && t.AmountCents < 0 {
-		if strings.Contains(strings.ToUpper(t.BankCode), "CWDL") {
-			t.Merchant, t.MerchantKey = "Geldautomat", "geldautomat"
+		if isCashCode(t.BankCode) {
+			t.Merchant, t.MerchantKey = cashMerchant, cashMerchantKey
 		} else if _, _, ok := matchKeywords(t.Remittance, []keywordRule{cashKeywords}); ok {
-			t.Merchant, t.MerchantKey = "Geldautomat", "geldautomat"
+			t.Merchant, t.MerchantKey = cashMerchant, cashMerchantKey
 		}
 	}
-	if t.Source == "manual" {
+	if t.Source == domain.SourceManual {
 		return
 	}
-	t.Source = "auto"
+	t.Source = domain.SourceAuto
 	credit := t.AmountCents > 0
 	lowMerchant := strings.ToLower(t.Merchant)
 	lowCP := strings.ToLower(t.Counterparty)
 	lowRem := strings.ToLower(t.Remittance)
-	iban := cleanIBAN(t.CounterpartyIBAN)
+	iban := domain.NormIBAN(t.CounterpartyIBAN)
 
 	// 1. User rules
 	for _, r := range ctx.Rules {
@@ -119,17 +136,17 @@ func Classify(t *Txn, ctx Context) {
 		}
 		var hit bool
 		switch r.Field {
-		case "merchant":
+		case domain.RuleMerchant:
 			hit = t.MerchantKey == p || strings.Contains(lowMerchant, p)
-		case "counterparty":
+		case domain.RuleCounterparty:
 			hit = strings.Contains(lowCP, p)
-		case "iban":
-			hit = iban != "" && iban == cleanIBAN(p)
-		case "remittance":
+		case domain.RuleIBAN:
+			hit = iban != "" && iban == domain.NormIBAN(p)
+		case domain.RuleRemittance:
 			hit = strings.Contains(lowRem, p)
 		}
 		if hit {
-			t.Slug, t.Source, t.Reason = r.Slug, "rule", "Eigene Regel: "+r.Field+" enthält „"+r.Pattern+"“"
+			t.Slug, t.Source, t.Reason = r.Slug, domain.SourceRule, "Eigene Regel: "+string(r.Field)+" enthält „"+r.Pattern+"“"
 			return
 		}
 	}
@@ -137,16 +154,16 @@ func Classify(t *Txn, ctx Context) {
 	// 2. Transfer between own accounts
 	if iban != "" && ctx.OwnIBANs[iban] {
 		other := ctx.IBANBook[iban]
-		if t.Book != "verwaltung" && other == "verwaltung" {
+		if t.Book != domain.BookProperty && other == domain.BookProperty {
 			// Money between rental account and private account counts in the household book
 			if credit {
-				t.Slug, t.Reason = "vermietung", "Überweisung vom Mietkonto"
+				t.Slug, t.Reason = domain.SlugRental, "Überweisung vom Mietkonto"
 			} else {
-				t.Slug, t.Reason = "zuschuss-vermietung", "Überweisung aufs Mietkonto"
+				t.Slug, t.Reason = domain.SlugRentalSubsidy, "Überweisung aufs Mietkonto"
 			}
 			return
 		}
-		t.Slug, t.Reason = "umbuchung", "Gegenkonto ist ein eigenes Konto"
+		t.Slug, t.Reason = domain.SlugTransfer, "Gegenkonto ist ein eigenes Konto"
 		return
 	}
 
@@ -154,7 +171,7 @@ func Classify(t *Txn, ctx Context) {
 	if ncp := strings.TrimSpace(normText(t.Counterparty)); ncp != "" {
 		for _, n := range ctx.OwnNames {
 			if n != "" && (ncp == n || strings.HasPrefix(ncp, n+" ")) {
-				t.Slug, t.Reason = "sparen", "Überweisung auf eigenen Namen (Konto nicht verbunden)"
+				t.Slug, t.Reason = domain.SlugSavings, "Überweisung auf eigenen Namen (Konto nicht verbunden)"
 				return
 			}
 		}
@@ -168,21 +185,24 @@ func Classify(t *Txn, ctx Context) {
 		}
 		// 3b. Credit from a known merchant = refund
 		if _, _, ok := MatchMerchant(t.Merchant + " " + t.Counterparty); ok {
-			t.Slug, t.Reason = "erstattung", "Gutschrift von Händler "+t.Merchant
+			t.Slug, t.Reason = domain.SlugRefund, "Gutschrift von Händler "+t.Merchant
 			return
 		}
-		t.Slug, t.Reason = "einnahmen-sonst", "Eingang ohne eindeutiges Merkmal"
+		t.Slug, t.Reason = domain.SlugOtherIncome, "Eingang ohne eindeutiges Merkmal"
 		return
 	}
 
 	// 4. Expenses: merchant name (for Amazon/Apple/Google the remittance counts too,
 	// since it contains e.g. "Prime" or "iCloud")
 	mtext := t.Merchant + " " + t.Counterparty
-	if strings.Contains(lowCP, "amazon") || strings.Contains(lowCP, "apple") || strings.Contains(lowCP, "google") {
-		mtext = t.Remittance + " " + mtext
+	for _, m := range marketplaces {
+		if strings.Contains(lowCP, m) {
+			mtext = t.Remittance + " " + mtext
+			break
+		}
 	}
 	if slug, _, ok := MatchMerchant(mtext); ok {
-		if slug == "strom" || slug == "gas" || slug == "wasser" {
+		if utilitySlugs[slug] {
 			if s2, w, ok := matchKeywords(t.Remittance, utilityKeywords); ok {
 				t.Slug, t.Reason = s2, "Versorger "+t.Merchant+", Stichwort „"+w+"“"
 				return
@@ -197,12 +217,14 @@ func Classify(t *Txn, ctx Context) {
 		return
 	}
 	// 6. Bank transaction code for cash
-	if strings.Contains(strings.ToUpper(t.BankCode), "CWDL") {
-		t.Slug, t.Reason = "bargeld", "Bargeldauszahlung laut Bankcode"
+	if isCashCode(t.BankCode) {
+		t.Slug, t.Reason = domain.SlugCash, "Bargeldauszahlung laut Bankcode"
 		return
 	}
-	t.Slug, t.Reason = "sonstiges", "Nicht zugeordnet"
+	t.Slug, t.Reason = domain.SlugOther, "Nicht zugeordnet"
 }
+
+func isCashCode(code string) bool { return strings.Contains(strings.ToUpper(code), bankCodeCash) }
 
 // IsAboMerchant reports whether the merchant is typically a subscription.
 func IsAboMerchant(name string) bool {
@@ -222,7 +244,7 @@ func OwnNamesFrom(names []string) []string {
 			continue
 		}
 		skip := false
-		for _, w := range []string{"konto", "giro", "spar", "tagesgeld", "depot", "karte", "card", "gemeinschaft", "plus", "komfort", "online", "classic", "premium", "basis", "direkt", "business", "privat"} {
+		for _, w := range accountNameWords {
 			if strings.Contains(t, w) {
 				skip = true
 			}

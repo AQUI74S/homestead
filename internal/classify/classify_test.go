@@ -3,6 +3,8 @@ package classify
 import (
 	"testing"
 	"time"
+
+	"github.com/AQUI74S/homestead/internal/domain"
 )
 
 func TestMerchant(t *testing.T) {
@@ -86,7 +88,7 @@ func TestClassify(t *testing.T) {
 }
 
 func TestCrossBookTransfer(t *testing.T) {
-	ctx := Context{OwnIBANs: map[string]bool{"DE11": true, "DE22": true}, IBANBook: map[string]string{"DE11": "haushalt", "DE22": "verwaltung"}}
+	ctx := Context{OwnIBANs: map[string]bool{"DE11": true, "DE22": true}, IBANBook: map[string]domain.Book{"DE11": domain.BookHousehold, "DE22": domain.BookProperty}}
 	in := Txn{AmountCents: 50000, Counterparty: "Max", CounterpartyIBAN: "DE22", Book: "haushalt"}
 	Classify(&in, ctx)
 	out := Txn{AmountCents: -80000, Counterparty: "Mietkonto", CounterpartyIBAN: "DE22", Book: "haushalt"}
@@ -112,7 +114,7 @@ func TestDetectRecurring(t *testing.T) {
 	today := d("2026-09-27")
 	var pts []Point
 	id := int64(0)
-	add := func(date string, amt int64, key, label, slug, group string) {
+	add := func(date string, amt int64, key, label, slug string, group domain.Group) {
 		id++
 		pts = append(pts, Point{TxnID: id, Date: d(date), AmountCents: amt, MerchantKey: key, Merchant: label, Slug: slug, Group: group})
 	}
@@ -148,7 +150,7 @@ func TestDetectRecurring(t *testing.T) {
 	for _, s := range series {
 		got[s.Key] = s
 	}
-	check := func(key string, cycleDays int, kind string, ended bool) {
+	check := func(key string, cycleDays domain.Cycle, kind domain.Kind, ended bool) {
 		t.Helper()
 		s, ok := got[key]
 		if !ok {
@@ -168,7 +170,7 @@ func TestDetectRecurring(t *testing.T) {
 		t.Errorf("supermarket wrongly detected as series")
 	}
 
-	slugOf, srcOf := map[int64]string{}, map[int64]string{}
+	slugOf, srcOf := map[int64]string{}, map[int64]domain.Source{}
 	for _, p := range pts {
 		slugOf[p.TxnID], srcOf[p.TxnID] = p.Slug, "auto"
 	}

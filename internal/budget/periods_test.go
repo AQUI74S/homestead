@@ -1,19 +1,22 @@
-package store
+package budget
 
 import (
 	"testing"
 	"time"
+
+	"github.com/AQUI74S/homestead/internal/domain"
+	"github.com/AQUI74S/homestead/internal/store"
 )
 
-func day(s string) time.Time { t, _ := time.Parse("2006-01-02", s); return t }
+func day(s string) time.Time { return domain.ParseDate(s) }
 
-func pay(d string, euros int64, rec int64, label string) salaryPayment {
-	return salaryPayment{date: day(d), cents: euros * 100, recurringID: rec, label: label}
+func pay(d string, euros int64, rec int64, label string) store.IncomePayment {
+	return store.IncomePayment{Date: day(d), Cents: euros * 100, RecurringID: rec, Label: label}
 }
 
 func TestPeriodWaitsForLateSalary(t *testing.T) {
-	pc := &PeriodCalc{Mode: "salary", byLabel: map[string]time.Time{}, today: day("2026-09-30")}
-	pc.apply([]salaryPayment{pay("2026-06-30", 3000, 1, "Gehalt"), pay("2026-07-30", 3000, 1, "Gehalt"), pay("2026-08-29", 3000, 1, "Gehalt")})
+	pc := &Periods{Mode: domain.PeriodSalary, byLabel: map[string]time.Time{}, today: day("2026-09-30")}
+	pc.apply([]store.IncomePayment{pay("2026-06-30", 3000, 1, "Gehalt"), pay("2026-07-30", 3000, 1, "Gehalt"), pay("2026-08-29", 3000, 1, "Gehalt")})
 
 	// 30 Sep: salary due today but not booked yet -> still September
 	if got := pc.Current(pc.today); got != "2026-09" {
@@ -43,8 +46,8 @@ func TestPeriodWaitsForLateSalary(t *testing.T) {
 
 func TestPeriodFirstOfSeveralSalaries(t *testing.T) {
 	// two selected salaries: A at the end of the month, B on the 1st – the first starts the period
-	pc := &PeriodCalc{Mode: "salary", byLabel: map[string]time.Time{}, today: day("2026-10-15")}
-	pc.apply([]salaryPayment{
+	pc := &Periods{Mode: domain.PeriodSalary, byLabel: map[string]time.Time{}, today: day("2026-10-15")}
+	pc.apply([]store.IncomePayment{
 		pay("2026-08-01", 2100, 2, "Gehalt B"), pay("2026-08-28", 3400, 1, "Gehalt A"),
 		pay("2026-09-01", 2100, 2, "Gehalt B"), pay("2026-09-29", 3400, 1, "Gehalt A"),
 		pay("2026-10-01", 2100, 2, "Gehalt B"),
@@ -58,8 +61,8 @@ func TestPeriodFirstOfSeveralSalaries(t *testing.T) {
 }
 
 func TestAutoLargeIncomeAroundMonthChange(t *testing.T) {
-	pc := &PeriodCalc{Mode: "salary", byLabel: map[string]time.Time{}, today: day("2026-09-30")}
-	var pays []salaryPayment
+	pc := &Periods{Mode: domain.PeriodSalary, byLabel: map[string]time.Time{}, today: day("2026-09-30")}
+	var pays []store.IncomePayment
 	for _, m := range []string{"2026-04", "2026-05", "2026-06", "2026-07", "2026-08"} {
 		pays = append(pays,
 			pay(m+"-28", 3400, 1, "Gehalt"),    // salary at month end
@@ -70,8 +73,8 @@ func TestAutoLargeIncomeAroundMonthChange(t *testing.T) {
 	pays = append(pays, pay("2026-08-15", 2500, 0, "")) // large but mid-month
 	got := pc.largeAroundMonthChange(pays)
 	for _, p := range got {
-		if p.recurringID != 1 {
-			t.Errorf("unexpected period starter %s %d", p.date.Format("02.01."), p.cents)
+		if p.RecurringID != 1 {
+			t.Errorf("unexpected period starter %s %d", p.Date.Format("02.01."), p.Cents)
 		}
 	}
 	if len(got) != 5 {

@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/AQUI74S/homestead/internal/domain"
 	"github.com/AQUI74S/homestead/internal/store"
 )
 
@@ -14,7 +15,7 @@ type MonthRow struct {
 	Soll   int64  `json:"soll"`
 	Paid   int64  `json:"paid"`
 	Open   int64  `json:"open"`
-	Status string `json:"status"` // bezahlt | teilweise | offen | faellig
+	Status string `json:"status"` // Status*
 }
 
 type Ledger struct {
@@ -44,7 +45,7 @@ func TrackStart(l store.Lease, firstData time.Time) time.Time {
 func ComputeLedger(l store.Lease, payments []store.HVTxn, firstData, today time.Time) Ledger {
 	lg := Ledger{LeaseID: l.ID, Months: []MonthRow{}, Payments: []store.HVTxn{}}
 	start := TrackStart(l, firstData)
-	lg.From = start.Format("2006-01-02")
+	lg.From = start.Format(domain.DateLayout)
 	last := monthStart(today)
 	if l.End != "" && monthStart(day(l.End)).Before(last) {
 		last = monthStart(day(l.End))
@@ -52,10 +53,10 @@ func ComputeLedger(l store.Lease, payments []store.HVTxn, firstData, today time.
 	var paidTotal int64
 	sort.Slice(payments, func(i, j int) bool { return payments[i].Date < payments[j].Date })
 	for _, p := range payments {
-		if p.LeaseID == nil || *p.LeaseID != l.ID || p.CostType != "miete" {
+		if p.LeaseID == nil || *p.LeaseID != l.ID || p.CostType != CostRent {
 			continue
 		}
-		if day(p.Date).Before(start.AddDate(0, 0, -20)) { // payments before the tracked period
+		if day(p.Date).Before(start.AddDate(0, 0, -earlyPaymentDays)) { // payments before the tracked period
 			continue
 		}
 		paidTotal += p.AmountCents
@@ -72,15 +73,15 @@ func ComputeLedger(l store.Lease, payments []store.HVTxn, firstData, today time.
 		cold, nk := RentAt(l, m)
 		full := cold + nk
 		soll := full
-		if total := int(next.Sub(m).Hours() / 24); days < total {
+		if total := domain.DaysBetween(m, next); days < total {
 			soll = full * int64(days) / int64(total)
 		}
 		dueDay := l.DueDay
 		if dueDay < 1 {
-			dueDay = 3
+			dueDay = DefaultDueDay
 		}
 		due := time.Date(m.Year(), m.Month(), dueDay, 0, 0, 0, 0, time.UTC)
-		row := MonthRow{Month: m.Format("2006-01"), Due: due.Format("2006-01-02"), Soll: soll}
+		row := MonthRow{Month: m.Format(domain.MonthLayout), Due: due.Format(domain.DateLayout), Soll: soll}
 		pay := remaining
 		if pay > soll {
 			pay = soll
@@ -92,13 +93,13 @@ func ComputeLedger(l store.Lease, payments []store.HVTxn, firstData, today time.
 		remaining -= pay
 		switch {
 		case row.Open == 0:
-			row.Status = "bezahlt"
+			row.Status = StatusPaid
 		case today.Before(due.AddDate(0, 0, 1)):
-			row.Status = "faellig"
+			row.Status = StatusDue
 		case row.Paid > 0:
-			row.Status = "teilweise"
+			row.Status = StatusPartial
 		default:
-			row.Status = "offen"
+			row.Status = StatusOpen
 		}
 		if !today.Before(due) {
 			lg.SollSum += soll

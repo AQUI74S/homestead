@@ -12,6 +12,8 @@ import (
 	"unicode/utf8"
 
 	eb "github.com/AQUI74S/homestead/internal/enablebanking"
+
+	"github.com/AQUI74S/homestead/internal/domain"
 )
 
 type Row struct {
@@ -214,7 +216,7 @@ func Parse(data []byte) ([]Row, error) {
 			cp = get(rec, c.text)
 		}
 		out = append(out, Row{BookingDate: d, AmountCents: amt, Counterparty: cp,
-			IBAN: strings.ToUpper(strings.ReplaceAll(get(rec, c.iban), " ", "")), Remittance: rem})
+			IBAN: domain.NormIBAN(get(rec, c.iban)), Remittance: rem})
 	}
 	if len(out) == 0 {
 		return nil, errors.New("Keine Umsätze in der Datei gefunden")

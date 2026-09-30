@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AQUI74S/homestead/internal/classify"
+	"github.com/AQUI74S/homestead/internal/domain"
 	"github.com/AQUI74S/homestead/internal/store"
 )
 
@@ -16,36 +17,36 @@ import (
 type CostType struct {
 	Slug       string `json:"slug"`
 	Name       string `json:"name"`
-	Kind       string `json:"kind"` // einnahme | kosten | neutral
+	Kind       string `json:"kind"` // KindIncome | KindCost | KindNeutral
 	Umlage     bool   `json:"umlagefaehig"`
-	DefaultKey string `json:"default_key"` // flaeche | personen | einheiten
+	DefaultKey string `json:"default_key"` // allocation key (Key*) of allocable costs
 }
 
 var CostTypes = []CostType{
-	{"miete", "Miete (inkl. NK-Vorauszahlung)", "einnahme", false, ""},
-	{"nk_nachzahlung", "Nebenkosten-Nachzahlung", "einnahme", false, ""},
-	{"kaution", "Kaution", "neutral", false, ""},
-	{"einnahme_sonst", "Sonstige Einnahme", "einnahme", false, ""},
-	{"grundsteuer", "Grundsteuer", "kosten", true, "flaeche"},
-	{"wasser", "Wasser", "kosten", true, "personen"},
-	{"abwasser", "Abwasser / Kanal", "kosten", true, "personen"},
-	{"muell", "Müllabfuhr", "kosten", true, "personen"},
-	{"heizung", "Heizung / Warmwasser", "kosten", true, "flaeche"},
-	{"strom_allgemein", "Allgemeinstrom", "kosten", true, "flaeche"},
-	{"versicherung", "Gebäudeversicherung", "kosten", true, "flaeche"},
-	{"hausmeister", "Hausmeister", "kosten", true, "flaeche"},
-	{"gartenpflege", "Gartenpflege", "kosten", true, "flaeche"},
-	{"reinigung", "Gebäudereinigung", "kosten", true, "flaeche"},
-	{"schornsteinfeger", "Schornsteinfeger", "kosten", true, "einheiten"},
-	{"strassenreinigung", "Straßenreinigung / Winterdienst", "kosten", true, "flaeche"},
-	{"kabel", "Kabel-TV / Antenne", "kosten", true, "einheiten"},
-	{"sonstige_bk", "Sonstige Betriebskosten", "kosten", true, "flaeche"},
-	{"hausgeld", "Hausgeld (WEG)", "kosten", false, ""},
-	{"reparatur", "Reparaturen & Instandhaltung", "kosten", false, ""},
-	{"verwaltung", "Verwaltung & Bank", "kosten", false, ""},
-	{"kredit", "Darlehen (Zins + Tilgung)", "kosten", false, ""},
-	{"sonstiges", "Sonstige Kosten", "kosten", false, ""},
-	{"entnahme", "Entnahme / Einlage (eigene Konten)", "neutral", false, ""},
+	{CostRent, "Miete (inkl. NK-Vorauszahlung)", KindIncome, false, ""},
+	{CostNKBackpay, "Nebenkosten-Nachzahlung", KindIncome, false, ""},
+	{CostDeposit, "Kaution", KindNeutral, false, ""},
+	{CostOtherIncome, "Sonstige Einnahme", KindIncome, false, ""},
+	{"grundsteuer", "Grundsteuer", KindCost, true, KeyArea},
+	{"wasser", "Wasser", KindCost, true, KeyPersons},
+	{"abwasser", "Abwasser / Kanal", KindCost, true, KeyPersons},
+	{"muell", "Müllabfuhr", KindCost, true, KeyPersons},
+	{"heizung", "Heizung / Warmwasser", KindCost, true, KeyArea},
+	{"strom_allgemein", "Allgemeinstrom", KindCost, true, KeyArea},
+	{"versicherung", "Gebäudeversicherung", KindCost, true, KeyArea},
+	{"hausmeister", "Hausmeister", KindCost, true, KeyArea},
+	{"gartenpflege", "Gartenpflege", KindCost, true, KeyArea},
+	{"reinigung", "Gebäudereinigung", KindCost, true, KeyArea},
+	{"schornsteinfeger", "Schornsteinfeger", KindCost, true, KeyUnits},
+	{"strassenreinigung", "Straßenreinigung / Winterdienst", KindCost, true, KeyArea},
+	{"kabel", "Kabel-TV / Antenne", KindCost, true, KeyUnits},
+	{"sonstige_bk", "Sonstige Betriebskosten", KindCost, true, KeyArea},
+	{"hausgeld", "Hausgeld (WEG)", KindCost, false, ""},
+	{"reparatur", "Reparaturen & Instandhaltung", KindCost, false, ""},
+	{"verwaltung", "Verwaltung & Bank", KindCost, false, ""},
+	{"kredit", "Darlehen (Zins + Tilgung)", KindCost, false, ""},
+	{CostOther, "Sonstige Kosten", KindCost, false, ""},
+	{CostTransfer, "Entnahme / Einlage (eigene Konten)", KindNeutral, false, ""},
 }
 
 var costTypeBySlug = func() map[string]CostType {
@@ -105,7 +106,7 @@ func GuessCostType(counterparty, remittance string) string {
 			}
 		}
 	}
-	return "sonstiges"
+	return CostOther
 }
 
 // ---------- Assignment ----------
@@ -134,7 +135,7 @@ func Assign(in AssignInput) []store.HVAssign {
 	}
 	var cands []cand
 	for _, l := range in.Leases {
-		c := cand{lease: l, iban: strings.ToUpper(strings.ReplaceAll(l.Tenant.IBAN, " ", ""))}
+		c := cand{lease: l, iban: domain.NormIBAN(l.Tenant.IBAN)}
 		for _, n := range []string{l.Tenant.Name, l.MatchText} {
 			if n = strings.TrimSpace(classify.NormName(n)); len(n) >= 3 {
 				c.names = append(c.names, n)
@@ -174,19 +175,19 @@ func Assign(in AssignInput) []store.HVAssign {
 		return single
 	}
 	activeOn := func(l store.Lease, d string) bool {
-		return (l.Start == "" || d >= addDays(l.Start, -45)) && (l.End == "" || d <= addDays(l.End, 60))
+		return (l.Start == "" || d >= addDays(l.Start, -leaseMatchDaysBefore)) && (l.End == "" || d <= addDays(l.End, leaseMatchDaysAfter))
 	}
 
 	var out []store.HVAssign
 	for _, t := range in.Txns {
-		if t.Source == "manual" {
+		if t.Source == domain.SourceManual {
 			continue
 		}
-		a := store.HVAssign{ID: t.ID, Source: "auto"}
-		iban := strings.ToUpper(strings.ReplaceAll(t.CounterpartyIBAN, " ", ""))
+		a := store.HVAssign{ID: t.ID, Source: domain.SourceAuto}
+		iban := domain.NormIBAN(t.CounterpartyIBAN)
 		switch {
 		case iban != "" && in.OwnIBANs[iban]:
-			a.CostType = "entnahme"
+			a.CostType = CostTransfer
 		case t.AmountCents > 0:
 			text := classify.NormName(t.Counterparty + " " + t.Remittance)
 			var best *store.Lease
@@ -208,14 +209,14 @@ func Assign(in AssignInput) []store.HVAssign {
 			}
 			if best != nil {
 				id, pid := best.ID, best.PropertyID
-				a.LeaseID, a.PropertyID, a.CostType = &id, &pid, "miete"
+				a.LeaseID, a.PropertyID, a.CostType = &id, &pid, CostRent
 				if strings.Contains(text, "kaution") {
-					a.CostType = "kaution"
+					a.CostType = CostDeposit
 				} else if strings.Contains(text, "nachzahlung") || strings.Contains(text, "nebenkostenabrechnung") {
-					a.CostType = "nk_nachzahlung"
+					a.CostType = CostNKBackpay
 				}
 			} else {
-				a.CostType, a.PropertyID = "einnahme_sonst", propertyIn(t.Counterparty+" "+t.Remittance)
+				a.CostType, a.PropertyID = CostOtherIncome, propertyIn(t.Counterparty+" "+t.Remittance)
 			}
 		default:
 			a.CostType, a.PropertyID = GuessCostType(t.Counterparty, t.Remittance), propertyIn(t.Counterparty+" "+t.Remittance)
@@ -228,7 +229,7 @@ func Assign(in AssignInput) []store.HVAssign {
 				}
 			}
 		}
-		if eqID(a.PropertyID, t.PropertyID) && eqID(a.LeaseID, t.LeaseID) && a.CostType == t.CostType && t.Source == "auto" {
+		if eqID(a.PropertyID, t.PropertyID) && eqID(a.LeaseID, t.LeaseID) && a.CostType == t.CostType && t.Source == domain.SourceAuto {
 			continue
 		}
 		out = append(out, a)
@@ -244,17 +245,22 @@ func eqID(a, b *int64) bool {
 }
 
 func addDays(d string, n int) string {
-	t, err := time.Parse("2006-01-02", d)
+	t, err := time.Parse(domain.DateLayout, d)
 	if err != nil {
 		return d
 	}
-	return t.AddDate(0, 0, n).Format("2006-01-02")
+	return t.AddDate(0, 0, n).Format(domain.DateLayout)
 }
 
-func day(s string) time.Time { t, _ := time.Parse("2006-01-02", s); return t }
+// day parses a date of the store ("" = zero time).
+func day(s string) time.Time { return domain.ParseDate(s) }
 
-func monthStart(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+func monthStart(t time.Time) time.Time { return domain.FirstOfMonth(t) }
+
+// IsUnassigned reports whether a rent account transaction still needs the user:
+// it could not be assigned to a cost type or property.
+func IsUnassigned(t store.HVTxn) bool {
+	return t.CostType == CostOtherIncome || t.CostType == CostOther || (t.PropertyID == nil && t.CostType != CostTransfer && t.CostType != "")
 }
 
 // RentAt returns the cold rent and utility prepayment (NK-Vorauszahlung) in effect on day d.
@@ -282,7 +288,7 @@ func occupiedDays(l store.Lease, from, to time.Time) int {
 	if !e.After(s) {
 		return 0
 	}
-	return int(e.Sub(s).Hours() / 24)
+	return domain.DaysBetween(s, e)
 }
 
 // streetNorm normalizes street names: "Talstraße 3" and "Talstr. 3" -> "talstr 3".

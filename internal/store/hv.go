@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"github.com/AQUI74S/homestead/internal/domain"
 	"strings"
 	"time"
 )
@@ -113,12 +114,12 @@ func (s *Store) SaveProperty(ctx context.Context, p Property) (int64, error) {
 	}
 	res, err := s.DB.ExecContext(ctx, `UPDATE properties SET name=$2, address=$3, purchase_price=($4::bigint)::numeric/100, notes=$5 WHERE id=$1`,
 		p.ID, p.Name, p.Address, p.PurchasePrice, p.Notes)
-	return p.ID, notFound(res, err)
+	return p.ID, mustAffect(res, err)
 }
 
 func (s *Store) DeleteProperty(ctx context.Context, id int64) error {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM properties WHERE id=$1`, id)
-	return notFound(res, err)
+	return mustAffect(res, err)
 }
 
 func (s *Store) SaveUnit(ctx context.Context, u Unit) (int64, error) {
@@ -128,36 +129,26 @@ func (s *Store) SaveUnit(ctx context.Context, u Unit) (int64, error) {
 		return u.ID, err
 	}
 	res, err := s.DB.ExecContext(ctx, `UPDATE units SET name=$2, area_m2=($3::bigint)::numeric/100, notes=$4 WHERE id=$1`, u.ID, u.Name, u.AreaCents, u.Notes)
-	return u.ID, notFound(res, err)
+	return u.ID, mustAffect(res, err)
 }
 
 func (s *Store) DeleteUnit(ctx context.Context, id int64) error {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM units WHERE id=$1`, id)
-	return notFound(res, err)
-}
-
-func notFound(res sql.Result, err error) error {
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return mustAffect(res, err)
 }
 
 func dateStr(t sql.NullTime) string {
 	if !t.Valid {
 		return ""
 	}
-	return t.Time.Format("2006-01-02")
+	return t.Time.Format(domain.DateLayout)
 }
 
 func nullDate(s string) any {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	if t, err := time.Parse("2006-01-02", s); err == nil {
+	if t, err := time.Parse(domain.DateLayout, s); err == nil {
 		return t
 	}
 	return nil
@@ -209,44 +200,35 @@ func (s *Store) Leases(ctx context.Context) ([]Lease, error) {
 
 // SaveLease creates or updates both the tenant and the lease.
 func (s *Store) SaveLease(ctx context.Context, l Lease) (int64, error) {
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	iban := strings.ToUpper(strings.ReplaceAll(l.Tenant.IBAN, " ", ""))
-	if l.Tenant.ID == 0 {
-		if err := tx.QueryRowContext(ctx, `INSERT INTO tenants(name, email, phone, iban, notes) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-			l.Tenant.Name, l.Tenant.Email, l.Tenant.Phone, iban, l.Tenant.Notes).Scan(&l.Tenant.ID); err != nil {
-			return 0, err
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		iban := domain.NormIBAN(l.Tenant.IBAN)
+		if l.Tenant.ID == 0 {
+			if err := tx.QueryRowContext(ctx, `INSERT INTO tenants(name, email, phone, iban, notes) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+				l.Tenant.Name, l.Tenant.Email, l.Tenant.Phone, iban, l.Tenant.Notes).Scan(&l.Tenant.ID); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `UPDATE tenants SET name=$2, email=$3, phone=$4, iban=$5, notes=$6 WHERE id=$1`,
+			l.Tenant.ID, l.Tenant.Name, l.Tenant.Email, l.Tenant.Phone, iban, l.Tenant.Notes); err != nil {
+			return err
 		}
-	} else if _, err := tx.ExecContext(ctx, `UPDATE tenants SET name=$2, email=$3, phone=$4, iban=$5, notes=$6 WHERE id=$1`,
-		l.Tenant.ID, l.Tenant.Name, l.Tenant.Email, l.Tenant.Phone, iban, l.Tenant.Notes); err != nil {
-		return 0, err
-	}
-	args := []any{l.UnitID, l.Tenant.ID, nullDate(l.Start), nullDate(l.End), l.RentCold, l.NKPrepay, l.DueDay, l.Deposit, l.DepositPaid,
-		l.Persons, l.RentType, nullDate(l.LastIncrease), nullDate(l.TrackFrom), strings.TrimSpace(l.MatchText), l.Notes}
-	if l.ID == 0 {
-		err = tx.QueryRowContext(ctx, `INSERT INTO leases(unit_id, tenant_id, start_date, end_date, rent_cold, nk_prepay, due_day, deposit,
-			deposit_paid, persons, rent_type, last_increase, track_from, match_text, notes)
-			VALUES ($1,$2,$3,$4,($5::bigint)::numeric/100,($6::bigint)::numeric/100,$7,($8::bigint)::numeric/100,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-			args...).Scan(&l.ID)
-	} else {
-		var res sql.Result
-		res, err = tx.ExecContext(ctx, `UPDATE leases SET unit_id=$1, tenant_id=$2, start_date=$3, end_date=$4, rent_cold=($5::bigint)::numeric/100,
+		args := []any{l.UnitID, l.Tenant.ID, nullDate(l.Start), nullDate(l.End), l.RentCold, l.NKPrepay, l.DueDay, l.Deposit, l.DepositPaid,
+			l.Persons, l.RentType, nullDate(l.LastIncrease), nullDate(l.TrackFrom), strings.TrimSpace(l.MatchText), l.Notes}
+		if l.ID == 0 {
+			return tx.QueryRowContext(ctx, `INSERT INTO leases(unit_id, tenant_id, start_date, end_date, rent_cold, nk_prepay, due_day, deposit,
+				deposit_paid, persons, rent_type, last_increase, track_from, match_text, notes)
+				VALUES ($1,$2,$3,$4,($5::bigint)::numeric/100,($6::bigint)::numeric/100,$7,($8::bigint)::numeric/100,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+				args...).Scan(&l.ID)
+		}
+		return mustAffect(tx.ExecContext(ctx, `UPDATE leases SET unit_id=$1, tenant_id=$2, start_date=$3, end_date=$4, rent_cold=($5::bigint)::numeric/100,
 			nk_prepay=($6::bigint)::numeric/100, due_day=$7, deposit=($8::bigint)::numeric/100, deposit_paid=$9, persons=$10, rent_type=$11,
-			last_increase=$12, track_from=$13, match_text=$14, notes=$15 WHERE id=$16`, append(args, l.ID)...)
-		err = notFound(res, err)
-	}
-	if err != nil {
-		return 0, err
-	}
-	return l.ID, tx.Commit()
+			last_increase=$12, track_from=$13, match_text=$14, notes=$15 WHERE id=$16`, append(args, l.ID)...))
+	})
+	return l.ID, err
 }
 
 func (s *Store) DeleteLease(ctx context.Context, id int64) error {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM leases WHERE id=$1`, id)
-	return notFound(res, err)
+	return mustAffect(res, err)
 }
 
 func (s *Store) AddRentStep(ctx context.Context, st RentStep) (int64, error) {
@@ -259,7 +241,7 @@ func (s *Store) AddRentStep(ctx context.Context, st RentStep) (int64, error) {
 
 func (s *Store) DeleteRentStep(ctx context.Context, id int64) error {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM rent_steps WHERE id=$1`, id)
-	return notFound(res, err)
+	return mustAffect(res, err)
 }
 
 // ---------- Deadlines ----------
@@ -306,37 +288,37 @@ func (s *Store) AddReminder(ctx context.Context, r Reminder) (int64, error) {
 
 func (s *Store) SetReminderDone(ctx context.Context, id int64, done bool) error {
 	res, err := s.DB.ExecContext(ctx, `UPDATE reminders SET done=$2 WHERE id=$1`, id, done)
-	return notFound(res, err)
+	return mustAffect(res, err)
 }
 
 func (s *Store) DeleteReminder(ctx context.Context, id int64) error {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM reminders WHERE id=$1`, id)
-	return notFound(res, err)
+	return mustAffect(res, err)
 }
 
 // ---------- Transactions on Mietkonten (rent accounts) ----------
 
 type HVTxn struct {
-	ID               int64  `json:"id"`
-	AccountID        int64  `json:"account_id"`
-	Date             string `json:"date"`
-	AmountCents      int64  `json:"amount"`
-	Counterparty     string `json:"counterparty"`
-	CounterpartyIBAN string `json:"counterparty_iban"`
-	Remittance       string `json:"remittance"`
-	Merchant         string `json:"merchant"`
-	MerchantKey      string `json:"merchant_key"`
-	PropertyID       *int64 `json:"property_id"`
-	LeaseID          *int64 `json:"lease_id"`
-	CostType         string `json:"cost_type"`
-	Source           string `json:"hv_source"`
+	ID               int64         `json:"id"`
+	AccountID        int64         `json:"account_id"`
+	Date             string        `json:"date"`
+	AmountCents      int64         `json:"amount"`
+	Counterparty     string        `json:"counterparty"`
+	CounterpartyIBAN string        `json:"counterparty_iban"`
+	Remittance       string        `json:"remittance"`
+	Merchant         string        `json:"merchant"`
+	MerchantKey      string        `json:"merchant_key"`
+	PropertyID       *int64        `json:"property_id"`
+	LeaseID          *int64        `json:"lease_id"`
+	CostType         string        `json:"cost_type"`
+	Source           domain.Source `json:"hv_source"` // auto | manual
 }
 
 // HVTransactions returns all transactions of the property-management accounts, optionally within [from, to).
 func (s *Store) HVTransactions(ctx context.Context, from, to time.Time) ([]HVTxn, error) {
 	q := `SELECT t.id, t.account_id, to_char(t.booking_date,'YYYY-MM-DD'), (t.amount*100)::bigint, t.counterparty, t.counterparty_iban,
 		t.remittance, t.merchant, t.merchant_key, t.property_id, t.lease_id, t.cost_type, t.hv_source
-		FROM transactions t JOIN accounts a ON a.id=t.account_id WHERE a.book='verwaltung' AND a.active`
+		FROM transactions t JOIN accounts a ON a.id=t.account_id WHERE ` + sqlPropertyBook + ` AND a.active`
 	var args []any
 	if !from.IsZero() {
 		q += ` AND t.booking_date >= $1 AND t.booking_date < $2`
@@ -369,7 +351,7 @@ func (s *Store) HVTransactions(ctx context.Context, from, to time.Time) ([]HVTxn
 // FirstHVDate returns the earliest booking date on property-management accounts.
 func (s *Store) FirstHVDate(ctx context.Context) (time.Time, error) {
 	var t sql.NullTime
-	err := s.DB.QueryRowContext(ctx, `SELECT min(t.booking_date) FROM transactions t JOIN accounts a ON a.id=t.account_id WHERE a.book='verwaltung'`).Scan(&t)
+	err := s.DB.QueryRowContext(ctx, `SELECT min(t.booking_date) FROM transactions t JOIN accounts a ON a.id=t.account_id WHERE `+sqlPropertyBook).Scan(&t)
 	return t.Time, err
 }
 
@@ -378,29 +360,26 @@ type HVAssign struct {
 	PropertyID *int64
 	LeaseID    *int64
 	CostType   string
-	Source     string
+	Source     domain.Source
 }
 
 func (s *Store) ApplyHVAssignments(ctx context.Context, ups []HVAssign) error {
 	if len(ups) == 0 {
 		return nil
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	stmt, err := tx.PrepareContext(ctx, `UPDATE transactions SET property_id=$2, lease_id=$3, cost_type=$4, hv_source=$5 WHERE id=$1`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	for _, u := range ups {
-		if _, err := stmt.ExecContext(ctx, u.ID, u.PropertyID, u.LeaseID, u.CostType, u.Source); err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		stmt, err := tx.PrepareContext(ctx, `UPDATE transactions SET property_id=$2, lease_id=$3, cost_type=$4, hv_source=$5 WHERE id=$1`)
+		if err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		defer stmt.Close()
+		for _, u := range ups {
+			if _, err := stmt.ExecContext(ctx, u.ID, u.PropertyID, u.LeaseID, u.CostType, u.Source); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type HVRule struct {
@@ -474,7 +453,7 @@ func (s *Store) AddManualCost(ctx context.Context, c ManualCost) (int64, error) 
 
 func (s *Store) DeleteManualCost(ctx context.Context, id int64) error {
 	res, err := s.DB.ExecContext(ctx, `DELETE FROM manual_costs WHERE id=$1`, id)
-	return notFound(res, err)
+	return mustAffect(res, err)
 }
 
 func (s *Store) NKKeys(ctx context.Context, propertyID int64) (map[string]string, error) {

@@ -332,10 +332,10 @@ func (c *Client) Balances(ctx context.Context, uid string) ([]Balance, error) {
 func (c *Client) Transactions(ctx context.Context, uid string, from, to time.Time, cont string) (*TransactionPage, error) {
 	q := url.Values{}
 	if !from.IsZero() {
-		q.Set("date_from", from.Format("2006-01-02"))
+		q.Set("date_from", from.Format(apiDate))
 	}
 	if !to.IsZero() {
-		q.Set("date_to", to.Format("2006-01-02"))
+		q.Set("date_to", to.Format(apiDate))
 	}
 	if cont != "" {
 		q.Set("continuation_key", cont)

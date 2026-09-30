@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/AQUI74S/homestead/internal/config"
+	"github.com/AQUI74S/homestead/internal/domain"
 	eb "github.com/AQUI74S/homestead/internal/enablebanking"
 	"github.com/AQUI74S/homestead/internal/store"
 	"github.com/AQUI74S/homestead/internal/syncer"
@@ -113,7 +114,7 @@ func TestHausverwaltungEndToEnd(t *testing.T) {
 		}
 	}
 	for _, a := range accts {
-		if want := map[bool]string{true: "verwaltung", false: "haushalt"}[a.Name == "Mietkonto"]; a.Book != want {
+		if want := map[bool]domain.Book{true: domain.BookProperty, false: domain.BookHousehold}[a.Name == "Mietkonto"]; a.Book != want {
 			t.Errorf("account %s in book %s, expected %s", a.Name, a.Book, want)
 		}
 	}

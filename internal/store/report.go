@@ -3,247 +3,155 @@ package store
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"sort"
 	"time"
+
+	"github.com/AQUI74S/homestead/internal/domain"
+	"github.com/lib/pq"
 )
 
+// CategoryLine is budget and actual spending of a category in a budget month.
 type CategoryLine struct {
-	ID            int64  `json:"id"`
-	Group         string `json:"group"`
-	Slug          string `json:"slug"`
-	Name          string `json:"name"`
-	Sort          int    `json:"sort"`
-	DefaultBudget int64  `json:"default_budget"`
-	BudgetCents   int64  `json:"budget"`
-	IstCents      int64  `json:"ist"`   // income positive, expenses positive (absolute amount)
-	Count         int    `json:"count"` // number of transactions
-	Overridden    bool   `json:"budget_overridden"`
-	AvgCents      int64  `json:"avg"` // monthly average over the last up to 12 budget months
+	ID            int64        `json:"id"`
+	Group         domain.Group `json:"group"`
+	Slug          string       `json:"slug"`
+	Name          string       `json:"name"`
+	Sort          int          `json:"sort"`
+	DefaultBudget int64        `json:"default_budget"`
+	BudgetCents   int64        `json:"budget"`
+	IstCents      int64        `json:"ist"`   // income positive, expenses positive (absolute amount)
+	Count         int          `json:"count"` // number of transactions
+	Overridden    bool         `json:"budget_overridden"`
+	AvgCents      int64        `json:"avg"` // monthly average over the last up to 12 budget months
 }
 
-type MonthReport struct {
-	Month         string           `json:"month"`
-	Lines         []CategoryLine   `json:"lines"`
-	IncomeBy      map[string]int64 `json:"income_by_owner"` // "A" | "B" | "" -> cents
-	Uncategorized int              `json:"uncategorized"`
-	AvgPeriods    int              `json:"avg_periods"` // number of months in the average
-	Period        Period           `json:"period"`
-}
-
-// Report computes budget and actuals per category for a month.
-func (s *Store) Report(ctx context.Context, pc *PeriodCalc, month string) (*MonthReport, error) {
-	start, end, err := pc.Range(month)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.DB.QueryContext(ctx, `
-		SELECT c.id, c.grp, c.slug, c.name, (c.budget*100)::bigint, c.sort,
-			(COALESCE(b.amount, c.budget)*100)::bigint, b.amount IS NOT NULL,
-			COALESCE((SELECT (sum(t.amount)*100)::bigint FROM transactions t JOIN accounts a ON a.id=t.account_id
-				WHERE t.category_id=c.id AND a.active AND a.book='haushalt' AND t.booking_date >= $1 AND t.booking_date < $2), 0),
-			(SELECT count(*) FROM transactions t JOIN accounts a ON a.id=t.account_id
-				WHERE t.category_id=c.id AND a.active AND a.book='haushalt' AND t.booking_date >= $1 AND t.booking_date < $2)
-		FROM categories c
-		LEFT JOIN budgets b ON b.category_id=c.id AND b.month=$3
-		ORDER BY c.grp, c.sort, c.name`, start, end, month)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	rep := &MonthReport{Month: month, IncomeBy: map[string]int64{"A": 0, "B": 0, "": 0}, Period: pc.Describe(month)}
-	for rows.Next() {
+// CategoryLines returns budget (with the override for month) and actuals in [start, end)
+// for every category, household accounts only.
+func (s *Store) CategoryLines(ctx context.Context, month string, start, end time.Time) ([]CategoryLine, error) {
+	return queryAll(ctx, s.DB, func(sc scanner) (CategoryLine, error) {
 		var l CategoryLine
 		var signed int64
-		if err := rows.Scan(&l.ID, &l.Group, &l.Slug, &l.Name, &l.DefaultBudget, &l.Sort, &l.BudgetCents, &l.Overridden, &signed, &l.Count); err != nil {
-			return nil, err
-		}
-		if l.Group == "income" {
+		err := sc.Scan(&l.ID, &l.Group, &l.Slug, &l.Name, &l.DefaultBudget, &l.Sort, &l.BudgetCents, &l.Overridden, &signed, &l.Count)
+		if l.Group == domain.GroupIncome {
 			l.IstCents = signed
 		} else {
 			l.IstCents = -signed // expenses as a positive amount; refunds reduce it
 		}
-		rep.Lines = append(rep.Lines, l)
+		return l, err
+	}, `
+		SELECT c.id, c.grp, c.slug, c.name, (c.budget*100)::bigint, c.sort,
+			(COALESCE(b.amount, c.budget)*100)::bigint, b.amount IS NOT NULL,
+			COALESCE((SELECT (sum(t.amount)*100)::bigint FROM transactions t JOIN accounts a ON a.id=t.account_id
+				WHERE t.category_id=c.id AND `+sqlHousehold+` AND t.booking_date >= $1 AND t.booking_date < $2), 0),
+			(SELECT count(*) FROM transactions t JOIN accounts a ON a.id=t.account_id
+				WHERE t.category_id=c.id AND `+sqlHousehold+` AND t.booking_date >= $1 AND t.booking_date < $2)
+		FROM categories c
+		LEFT JOIN budgets b ON b.category_id=c.id AND b.month=$3
+		ORDER BY c.grp, c.sort, c.name`, start, end, month)
+}
+
+// IncomeByOwner sums the income in [start, end) per account holder (for the couple split).
+func (s *Store) IncomeByOwner(ctx context.Context, start, end time.Time) (map[domain.Owner]int64, error) {
+	type row struct {
+		owner domain.Owner
+		cents int64
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// income by account holder (for the couple split)
-	orows, err := s.DB.QueryContext(ctx, `SELECT a.owner, COALESCE((sum(t.amount)*100)::bigint,0)
+	rows, err := queryAll(ctx, s.DB, func(sc scanner) (row, error) {
+		var r row
+		return r, sc.Scan(&r.owner, &r.cents)
+	}, `SELECT a.owner, COALESCE((sum(t.amount)*100)::bigint,0)
 		FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN categories c ON c.id=t.category_id
-		WHERE c.grp='income' AND a.active AND a.book='haushalt' AND t.booking_date >= $1 AND t.booking_date < $2 GROUP BY a.owner`, start, end)
+		WHERE `+sqlIsIncome+` AND `+sqlHousehold+` AND t.booking_date >= $1 AND t.booking_date < $2 GROUP BY a.owner`, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer orows.Close()
-	for orows.Next() {
-		var o string
-		var v int64
-		if err := orows.Scan(&o, &v); err != nil {
-			return nil, err
-		}
-		rep.IncomeBy[o] = v
+	out := map[domain.Owner]int64{domain.OwnerA: 0, domain.OwnerB: 0, domain.OwnerJoint: 0}
+	for _, r := range rows {
+		out[r.owner] = r.cents
 	}
-	err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
-		WHERE a.active AND a.book='haushalt' AND c.slug IN ('sonstiges','einnahmen-sonst') AND t.category_source = 'auto' AND t.booking_date >= $1 AND t.booking_date < $2`, start, end).Scan(&rep.Uncategorized)
-	return rep, err
+	return out, nil
 }
 
-type TrendPoint struct {
-	Month    string `json:"month"`
-	Income   int64  `json:"income"`
-	Bills    int64  `json:"bills"`
-	Expenses int64  `json:"expenses"`
-	Savings  int64  `json:"savings"`
-	Debts    int64  `json:"debts"`
+// CountUncategorized counts household transactions in [start, end) that nobody has placed yet.
+func (s *Store) CountUncategorized(ctx context.Context, start, end time.Time) (int, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
+		WHERE `+sqlHousehold+` AND `+sqlCatchAllAuto+` AND t.booking_date >= $1 AND t.booking_date < $2`, start, end).Scan(&n)
+	return n, err
 }
 
-// Trend returns the totals per group for the last n periods up to and including month.
-func (s *Store) Trend(ctx context.Context, pc *PeriodCalc, month string, n int) ([]TrendPoint, error) {
-	m, err := time.Parse("2006-01", month)
-	if err != nil {
-		return nil, fmt.Errorf("Monat %q: erwartet JJJJ-MM", month)
-	}
-	out := make([]TrendPoint, n)
-	starts := make([]time.Time, n+1)
-	for i := 0; i < n; i++ {
-		l := m.AddDate(0, i-n+1, 0).Format("2006-01")
-		out[i].Month = l
-		starts[i], starts[i+1], _ = pc.Range(l)
-	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT t.booking_date, c.grp, (sum(t.amount)*100)::bigint
+// DayGroupSum is the signed sum of a category group on one day.
+type DayGroupSum struct {
+	Day   time.Time
+	Group domain.Group
+	Cents int64
+}
+
+// DailyGroupSums returns the household sums per day and group in [from, to), without transfers.
+func (s *Store) DailyGroupSums(ctx context.Context, from, to time.Time) ([]DayGroupSum, error) {
+	return queryAll(ctx, s.DB, func(sc scanner) (DayGroupSum, error) {
+		var d DayGroupSum
+		err := sc.Scan(&d.Day, &d.Group, &d.Cents)
+		d.Day = domain.Day(d.Day)
+		return d, err
+	}, `SELECT t.booking_date, c.grp, (sum(t.amount)*100)::bigint
 		FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
-		WHERE a.active AND a.book='haushalt' AND c.grp <> 'transfer' AND t.booking_date >= $1 AND t.booking_date < $2
-		GROUP BY 1, 2`, starts[0], starts[n])
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var d time.Time
-		var g string
-		var v int64
-		if err := rows.Scan(&d, &g, &v); err != nil {
-			return nil, err
-		}
-		d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
-		i := sort.Search(n, func(i int) bool { return d.Before(starts[i+1]) })
-		if i >= n || d.Before(starts[i]) {
-			continue
-		}
-		p := &out[i]
-		switch g {
-		case "income":
-			p.Income += v
-		case "bills":
-			p.Bills -= v
-		case "expenses":
-			p.Expenses -= v
-		case "savings":
-			p.Savings -= v
-		case "debts":
-			p.Debts -= v
-		}
-	}
-	return out, rows.Err()
+		WHERE `+sqlHousehold+` AND `+sqlNotTransfer+` AND t.booking_date >= $1 AND t.booking_date < $2
+		GROUP BY 1, 2`, from, to)
 }
 
-// BudgetAverages returns the monthly average per category (cents, expenses and income positive)
-// over the last up to 12 full budget months – only as many as there is data for.
-// Over 12 months, annual and quarterly payments are spread correctly as well.
-func (s *Store) BudgetAverages(ctx context.Context, pc *PeriodCalc, today time.Time) (map[int64]int64, int, error) {
-	cur, _ := time.Parse("2006-01", pc.Current(today))
-	end, _, err := pc.Range(cur.Format("2006-01"))
-	if err != nil {
-		return nil, 0, err
-	}
+// CategorySum is the signed sum of a category.
+type CategorySum struct {
+	ID    int64
+	Group domain.Group
+	Cents int64
+}
+
+// CategorySums returns the household sums per category in [from, to), without transfers.
+func (s *Store) CategorySums(ctx context.Context, from, to time.Time) ([]CategorySum, error) {
+	return queryAll(ctx, s.DB, func(sc scanner) (CategorySum, error) {
+		var c CategorySum
+		return c, sc.Scan(&c.ID, &c.Group, &c.Cents)
+	}, `SELECT c.id, c.grp, (sum(t.amount)*100)::bigint
+		FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
+		WHERE `+sqlHousehold+` AND `+sqlNotTransfer+` AND t.booking_date >= $1 AND t.booking_date < $2
+		GROUP BY c.id, c.grp`, from, to)
+}
+
+// FirstHouseholdBooking returns the earliest booking date on household accounts
+// (ok=false without any transactions).
+func (s *Store) FirstHouseholdBooking(ctx context.Context) (time.Time, bool, error) {
 	var first sql.NullTime
-	if err := s.DB.QueryRowContext(ctx, `SELECT min(t.booking_date) FROM transactions t JOIN accounts a ON a.id=t.account_id
-		WHERE a.active AND a.book='haushalt'`).Scan(&first); err != nil {
-		return nil, 0, err
-	}
-	out := map[int64]int64{}
-	if !first.Valid {
-		return out, 0, nil
-	}
-	n, start := 0, end
-	for k := 1; k <= 12; k++ {
-		st, _, err := pc.Range(cur.AddDate(0, -k, 0).Format("2006-01"))
-		if err != nil || st.Before(first.Time) {
-			break
-		}
-		n, start = k, st
-	}
-	if n == 0 {
-		return out, 0, nil
-	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT c.id, c.grp, (sum(t.amount)*100)::bigint
-		FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
-		WHERE a.active AND a.book='haushalt' AND c.grp <> 'transfer' AND t.booking_date >= $1 AND t.booking_date < $2
-		GROUP BY c.id, c.grp`, start, end)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, sum int64
-		var grp string
-		if err := rows.Scan(&id, &grp, &sum); err != nil {
-			return nil, 0, err
-		}
-		if grp != "income" {
-			sum = -sum
-		}
-		if sum > 0 {
-			out[id] = sum / int64(n)
-		}
-	}
-	return out, n, rows.Err()
+	err := s.DB.QueryRowContext(ctx, `SELECT min(t.booking_date) FROM transactions t JOIN accounts a ON a.id=t.account_id
+		WHERE `+sqlHousehold).Scan(&first)
+	return first.Time, first.Valid, err
 }
 
-// SuggestBudgets sets budgets to the average rounded up to 10 € (see BudgetAverages).
-// Without overwrite, only where no budget is set yet. With overwrite, all budgets are
-// recalculated (even to 0) and monthly overrides from the current budget month onward are removed.
-func (s *Store) SuggestBudgets(ctx context.Context, pc *PeriodCalc, today time.Time, overwrite bool) (int, int, error) {
-	avg, n, err := s.BudgetAverages(ctx, pc, today)
-	if err != nil || n == 0 {
-		return 0, n, err
+// IncomePayment is an incoming household payment that may start a budget period.
+type IncomePayment struct {
+	Date        time.Time
+	Cents       int64
+	RecurringID int64
+	Label       string // label of its recurring series
+}
+
+// IncomePayments loads the payments of the given series or – without series – all
+// household income except refunds, oldest first.
+func (s *Store) IncomePayments(ctx context.Context, seriesIDs []int64) ([]IncomePayment, error) {
+	q := `SELECT t.booking_date, (t.amount*100)::bigint, COALESCE(t.recurring_id, 0), COALESCE(r.label, '')
+		FROM transactions t JOIN accounts a ON a.id=t.account_id
+		LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN recurring r ON r.id=t.recurring_id
+		WHERE ` + sqlHousehold + ` AND t.amount > 0 AND `
+	var args []any
+	if len(seriesIDs) > 0 {
+		q += `t.recurring_id = ANY($1::bigint[])`
+		args = append(args, pq.Array(seriesIDs))
+	} else {
+		q += sqlIsIncome + ` AND c.slug <> '` + domain.SlugRefund + `'`
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, n, err
-	}
-	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT id, (budget*100)::bigint FROM categories WHERE grp <> 'transfer'`)
-	if err != nil {
-		return 0, n, err
-	}
-	type cb struct{ id, budget int64 }
-	var cats []cb
-	for rows.Next() {
-		var c cb
-		if err := rows.Scan(&c.id, &c.budget); err != nil {
-			rows.Close()
-			return 0, n, err
-		}
-		cats = append(cats, c)
-	}
-	rows.Close()
-	changed := 0
-	for _, c := range cats {
-		v := (avg[c.id] + 999) / 1000 * 1000 // round up to full 10 €
-		if v == c.budget || (!overwrite && (c.budget != 0 || v == 0)) {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE categories SET budget=($2::bigint)::numeric/100 WHERE id=$1`, c.id, v); err != nil {
-			return 0, n, err
-		}
-		changed++
-	}
-	if overwrite {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM budgets WHERE month >= $1`, pc.Current(today)); err != nil {
-			return 0, n, err
-		}
-	}
-	return changed, n, tx.Commit()
+	return queryAll(ctx, s.DB, func(sc scanner) (IncomePayment, error) {
+		var p IncomePayment
+		err := sc.Scan(&p.Date, &p.Cents, &p.RecurringID, &p.Label)
+		p.Date = domain.Day(p.Date)
+		return p, err
+	}, q+` ORDER BY t.booking_date`, args...)
 }
