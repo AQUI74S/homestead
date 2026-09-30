@@ -274,7 +274,8 @@ main.addEventListener('change', async e=>{
   if(el.closest && el.closest('#txFilters')){ readTxFilters(); loadTx(); }
   if(el.id==='cNext'||el.id==='cCycle') updateNextHint();
   if(el.dataset.setting==='period'){
-    try{ await api('PUT','/api/settings',{period_mode:$('#pMode').value, salary_series:$('#pSeries').value}); S.me=await api('GET','/api/me'); S.month=S.me.current_month; toast('Budgetmonat gespeichert',2500); viewKonten(); }catch(err){ toastError(err); }
+    const ids=[...document.querySelectorAll('[data-series]:checked')].map(c=>c.dataset.series).join(',');
+    try{ await api('PUT','/api/settings',{period_mode:$('#pMode').value, salary_series:ids}); S.me=await api('GET','/api/me'); S.month=S.me.current_month; toast('Budgetmonat gespeichert',2500); viewKonten(); }catch(err){ toastError(err); }
   }
   if(el.dataset.setting==='names'){
     try{ await api('PUT','/api/settings',{own_names:el.value}); toast('Gespeichert, Umsätze neu zugeordnet',2500); }catch(err){ toastError(err); }
@@ -341,7 +342,7 @@ document.addEventListener('click', async e=>{
 function showPeriod(p){
   if(!p) return;
   $('#pRange').textContent = `${dm(p.start)}–${dm(p.end)}${p.end.slice(0,4)!==p.start.slice(0,4)?p.end.slice(0,4):''}`;
-  $('#pRange').title = p.mode==='salary' ? `Budgetmonat von Gehalt zu Gehalt (${p.salary_series})` : 'Kalendermonat';
+  $('#pRange').title = p.mode==='salary' ? `Budgetmonat von Gehalt zu Gehalt${p.salary_series?` (${p.salary_series})`:''}` : 'Kalendermonat';
 }
 function upcomingHTML(ov){
   const items = ov.upcoming || [];
@@ -598,18 +599,24 @@ async function viewKonten(book){
 main.addEventListener('change', e=>{ if(e.target.dataset.acc && e.target.dataset.ownerSkip!==undefined){ const sel=e.target.closest('[data-accid]').querySelector('[data-owner]'); sel.dispatchEvent(new Event('change',{bubbles:true})); } });
 
 function periodSettingsHTML(series){
-  const mode=S.me.period_mode||'salary', cur=S.me.salary_series||'';
+  const mode=S.me.period_mode||'salary';
+  const sel=new Set(String(S.me.salary_series||'').split(',').filter(Boolean));
+  const auto=sel.size===0;
+  const list=series.filter(r=>!r.ended||sel.has(String(r.id))).sort((a,b)=>b.amount-a.amount);
   return `<section class="card"><h3>Budgetmonat</h3>
-    <div class="filters" style="grid-template-columns:1fr 1.4fr 1.4fr">
+    <div class="filters" style="grid-template-columns:1fr 2fr">
       <div class="field"><label for="pMode">Ein Monat läuft</label><select id="pMode" data-setting="period">
         <option value="salary"${mode==='salary'?' selected':''}>von Gehalt zu Gehalt</option>
         <option value="calendar"${mode==='calendar'?' selected':''}>vom 1. bis Monatsende</option></select></div>
-      <div class="field"><label for="pSeries">Maßgebliches Gehalt</label><select id="pSeries" data-setting="period"${mode==='calendar'?' disabled':''}>
-        <option value="">Automatisch (größter Eingang${S.me.salary_series_name&&!cur?`: ${esc(S.me.salary_series_name)}`:''})</option>
-        ${series.map(r=>`<option value="${r.id}"${String(r.id)===cur?' selected':''}>${esc(r.label)} · ${E(r.amount)} · ${esc(r.cycle)}</option>`).join('')}</select></div>
       <div class="field"><label for="ownNames">Weitere eigene Namen</label><input id="ownNames" data-setting="names" value="${esc(S.me.own_names||'')}" placeholder="z. B. Max Mustermann, Erika Mustermann"></div>
     </div>
-    <p class="note">Ein Budgetmonat beginnt mit dem Gehaltseingang und heißt nach dem Monat, für den das Geld gedacht ist: Gehalt am 28.09. → Budgetmonat Oktober. Überweisungen auf eigene Namen zu nicht verbundenen Konten zählen als „Sparen“.</p></section>`;
+    ${mode==='salary'?`<fieldset class="salary-pick"><legend>Welche Gehälter beginnen einen neuen Monat?</legend>
+      <p class="note">${auto
+        ?`Automatisch: der erste große Zahlungseingang (mind. 30&nbsp;% eures üblichen Monatseinkommens) zwischen dem 22. und dem 5.${S.me.salary_series_name?` Zuletzt erkannt: ${esc(S.me.salary_series_name)}.`:''} Wähle Gehälter aus, um das genau festzulegen.`
+        :'Der Monat beginnt mit dem ersten der ausgewählten Gehälter. Keine Auswahl = automatisch.'}</p>
+      ${list.length?list.map(r=>`<label class="small"><input type="checkbox" data-setting="period" data-series="${r.id}"${sel.has(String(r.id))?' checked':''}> ${esc(r.label)} · ${E(r.amount)} · ${esc(r.cycle)}${r.kind==='einkommen'?'':` <span class="muted">(${esc(r.kind)})</span>`}</label>`).join(''):'<p class="muted small">Noch keine regelmäßigen Eingänge erkannt.</p>'}
+    </fieldset>`:''}
+    <p class="note">Ein Budgetmonat heißt nach dem Monat, für den das Geld gedacht ist: Gehalt am 28.09. → Budgetmonat Oktober. Solange ein fälliges Gehalt noch nicht gebucht ist, läuft der alte Monat weiter (höchstens 7 Tage). Überweisungen auf eigene Namen zu nicht verbundenen Konten zählen als „Sparen“.</p></section>`;
 }
 function bankButtons(list){
   if(!list.length) return '<div class="empty">Keine Bank gefunden.</div>';

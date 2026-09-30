@@ -242,7 +242,7 @@ func TestDemoEndToEnd(t *testing.T) {
 		SalaryName   string `json:"salary_series_name"`
 	}
 	do("GET", "/api/me", "", &me)
-	if me.SalaryName != "Muster Software GmbH" {
+	if !strings.Contains(me.SalaryName, "Muster Software GmbH") {
 		t.Errorf("salary series: %q", me.SalaryName)
 	}
 	var ov2 struct {

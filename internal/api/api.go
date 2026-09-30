@@ -288,7 +288,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	fc := forecast.Compute(rec, start, end, today)
 	if pc.Mode == "salary" {
-		fc.DropNextSalary(pc.SeriesID, start)
+		fc.DropNextSalary(pc.SeriesIDs, m)
 	}
 	var incomeIst, outIst, budgetRest int64
 	for _, l := range rep.Lines {
@@ -764,7 +764,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		NameB        string  `json:"name_b"`
 		OwnNames     *string `json:"own_names"`     // additional own names, comma-separated
 		PeriodMode   string  `json:"period_mode"`   // salary | calendar
-		SalarySeries *string `json:"salary_series"` // series ID or "" for automatic
+		SalarySeries *string `json:"salary_series"` // comma-separated series IDs, "" = automatic
 	}
 	if err := decode(r, &in); err != nil {
 		bad(w, "Ungültige Anfrage")
@@ -781,13 +781,15 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if in.SalarySeries != nil {
-		if *in.SalarySeries != "" {
-			if _, err := strconv.ParseInt(*in.SalarySeries, 10, 64); err != nil {
-				bad(w, "Ungültige Gehaltsserie")
-				return
-			}
+		var ids []string
+		for _, id := range store.ParseSeriesIDs(*in.SalarySeries) {
+			ids = append(ids, strconv.FormatInt(id, 10))
 		}
-		if err := s.st.SetSetting(r.Context(), "salary_series", *in.SalarySeries); err != nil {
+		if strings.TrimSpace(*in.SalarySeries) != "" && len(ids) == 0 {
+			bad(w, "Ungültige Gehaltsserie")
+			return
+		}
+		if err := s.st.SetSetting(r.Context(), "salary_series", strings.Join(ids, ",")); err != nil {
 			s.fail(w, r, err)
 			return
 		}

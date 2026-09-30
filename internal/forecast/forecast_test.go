@@ -2,7 +2,6 @@ package forecast
 
 import (
 	"testing"
-	"time"
 
 	"github.com/AQUI74S/homestead/internal/store"
 )
@@ -70,13 +69,15 @@ func TestWeekendShift(t *testing.T) {
 }
 
 func TestDropNextSalary(t *testing.T) {
-	res := Result{OpenIn: 350000, Items: []Item{
+	res := Result{OpenIn: 350000 + 210000, Items: []Item{
 		{RecurringID: 1, Date: "2026-08-29", Amount: 340000, Status: "bezahlt"},
-		{RecurringID: 1, Date: "2026-09-30", Amount: 340000, Status: "offen"},
-		{RecurringID: 2, Date: "2026-09-10", Amount: 10000, Status: "offen"},
+		{RecurringID: 1, Date: "2026-09-30", Amount: 340000, Status: "offen"}, // funds October
+		{RecurringID: 2, Date: "2026-09-15", Amount: 210000, Status: "offen"}, // second salary within September
+		{RecurringID: 3, Date: "2026-09-10", Amount: 10000, Status: "offen"},
 	}}
-	res.DropNextSalary(1, time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC))
-	if len(res.Items) != 2 || res.OpenIn != 10000 {
-		t.Errorf("next salary not removed: %+v", res)
+	res.OpenIn = 340000 + 210000 + 10000
+	res.DropNextSalary([]int64{1, 2}, "2026-09")
+	if len(res.Items) != 3 || res.OpenIn != 220000 {
+		t.Errorf("next salary not removed correctly: %+v", res)
 	}
 }
