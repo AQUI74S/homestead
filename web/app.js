@@ -102,6 +102,27 @@ async function route(){
 }
 window.addEventListener('hashchange', route);
 
+/* ---------- Theme: Auto (follows the system) | Hell | Dunkel ---------- */
+const THEMES = [
+  ['auto','Auto',svgIcon('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>')],
+  ['light','Hell',svgIcon('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')],
+  ['dark','Dunkel',svgIcon('<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>')],
+];
+function svgIcon(d){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`; }
+function themePref(){ try{ return localStorage.getItem('hs-theme')||'auto'; }catch{ return 'auto'; } }
+const darkMQ = matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(){
+  const p = themePref();
+  document.documentElement.dataset.theme = p==='auto' ? (darkMQ.matches?'dark':'light') : p;
+  document.querySelectorAll('.theme-slot').forEach(el=>{ el.innerHTML = themeSwitchHTML(); });
+}
+function themeSwitchHTML(){
+  const p = themePref();
+  return `<div class="theme-sw" role="group" aria-label="Erscheinungsbild">${THEMES.map(([k,l,i])=>`<button type="button" data-act="theme" data-theme="${k}" aria-pressed="${p===k}" title="${l}">${i}<span>${l}</span></button>`).join('')}</div>`;
+}
+darkMQ.addEventListener?.('change', ()=>{ if(themePref()==='auto') applyTheme(); });
+applyTheme();
+
 /* ---------- Sidebar: account balances ---------- */
 async function renderSide(){
   try{
@@ -330,6 +351,7 @@ document.addEventListener('click', async e=>{
   const b=e.target.closest('[data-act],[data-cat].ist-link'); if(!b) return;
   const act=b.dataset.act;
   if(b.classList.contains('ist-link')){ S.txFilter={q:'',account:'',cat:String(b.dataset.cat),group:''}; location.hash='#umsaetze'; return; }
+  if(act==='theme'){ try{ localStorage.setItem('hs-theme', b.dataset.theme); }catch{} applyTheme(); return; }
   try{
     if(act==='up-all'){ S.upAll=!S.upAll; viewMonat(); return; }
     if(act==='suggest'){ const r=await api('POST','/api/budgets/suggest'); toast(`${r.updated} Budgets gesetzt`,3000); S.cats=[]; route(); }
@@ -617,6 +639,7 @@ async function viewKonten(book){
     ${otherCount?`<p class="note">${otherCount===1?'Ein weiteres Konto gehört':otherCount+' weitere Konten gehören'} zum Bereich ${isHH?'<a href="#hv-konten">Hausverwaltung</a>':'<a href="#konten">Haushaltsbuch</a>'}.</p>`:''}
     ${isHH?`<section class="ledger"><header><h2>Eigene Regeln</h2><span class="sum">entstehen, wenn du einen Umsatz umsortierst und „Alle … so zuordnen“ wählst</span></header>
       ${rules.length?`<div class="tbl-scroll"><table><thead><tr><th>Wenn</th><th>enthält</th><th>dann</th><th></th></tr></thead><tbody>${rules.map(r=>`<tr><td>${({merchant:'Händler',counterparty:'Empfänger',iban:'IBAN',remittance:'Verwendungszweck'})[r.field]}</td><td><b>${esc(r.pattern)}</b></td><td>${esc(S.cats.find(c=>c.id===r.category_id)?.name||r.category_slug)}</td><td class="r"><button class="btn ghost small danger" data-act="del-rule" data-id="${r.id}">Löschen</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Noch keine eigenen Regeln.</div>'}</section>`:''}
+    <section class="ledger"><header><h2>Erscheinungsbild</h2><span class="sum">Auto folgt der Einstellung deines Geräts. Die Wahl gilt für diesen Browser.</span></header><div class="theme-slot" style="max-width:340px;padding:4px 18px 18px">${themeSwitchHTML()}</div></section>
     ${S.me.auth_required?'<div class="row"><span class="spacer"></span><button class="btn ghost" data-act="logout">Abmelden</button></div>':''}`;
   const bq=$('#bankq'); if(bq){ bq.addEventListener('input',()=>{ S.bankFilter=bq.value; const f=(S.banks||[]).filter(b=>b.name.toLowerCase().includes(bq.value.toLowerCase())); $('#bankList').innerHTML=bankButtons(f); }); bq.focus(); }
   if(bankMsg==='ok') pollSync();

@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Homestead</title>
 <meta name="color-scheme" content="light dark">
+<script>/* Apply the saved theme before the first paint (auto | light | dark). */
+(function(){var t='auto';try{t=localStorage.getItem('hs-theme')||'auto'}catch(e){}
+if(t==='auto')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.dataset.theme=t})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400;500;600;700&display=swap">
@@ -27,6 +31,7 @@
       <div class="side-label" id="sideAccTitle">Konten</div>
       <div class="side-accounts" id="sideAccounts"></div>
       <div class="status" id="syncState" aria-live="polite"></div>
+      <div class="theme-slot"></div>
     </div>
   </aside>
   <div class="content">

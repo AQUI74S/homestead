@@ -200,7 +200,7 @@ async function hvNK(){
   const st = d.settlement;
   const umlage = HV.meta.cost_types.filter(c=>c.umlagefaehig);
   main.innerHTML = hvNav('hv-nk') + `
-    <section class="card no-print"><div class="filters" style="grid-template-columns:2fr 1fr 2fr">
+    <section class="card no-print"><div class="filters nk">
       <div class="field"><label for="nkProp">Objekt</label><select id="nkProp">${props.map(p=>`<option value="${p.id}"${p.id===HV.nkProp?' selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="nkYear">Abrechnungsjahr</label><select id="nkYear">${[0,1,2,3].map(i=>new Date().getFullYear()-i).map(y=>`<option${y===HV.nkYear?' selected':''}>${y}</option>`).join('')}</select></div>
       <div class="field"><label>Frist</label><div class="tnum" style="padding:8px 0">Zustellung an die Mieter bis <b>${dmy(st.deadline)}</b></div></div></div></section>

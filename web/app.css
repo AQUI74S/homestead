@@ -9,17 +9,18 @@
   --track:#EFEBE4; --radius:18px; --radius-s:10px;
   --shadow:0 1px 2px rgba(22,24,29,.04);
   font-family:"Geist",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    --bg:#111315; --side:#15181B; --surface:#1B1F23; --surface-2:#22272C; --line:#2C3238; --line-2:#262B30;
-    --ink:#ECEEF0; --ink-2:#B5BAC1; --ink-3:#8E949C;
-    --accent:#5FB8AE; --accent-soft:#1D3533; --accent-ink:#9FE0D6; --on-accent:#0B1514;
-    --hero:#0A0C0E; --hero-ink:#FFFFFF; --hero-2:#B5BAC1; --hero-track:#262B30;
-    --c-income:#7FA9D6; --c-bills:#5FB8AE; --c-expenses:#E0A447; --c-savings:#72C28F; --c-debts:#E07A62; --c-transfer:#8E949C;
-    --good:#6FC593; --warn:#E3A451; --bad:#F08A76; --warn-soft:#3A2F1C; --bad-soft:#3D2420; --good-soft:#1F3A2A;
-    --track:#2C3238; --shadow:none;
-  }
+/* Theme: app.js resolves Auto/Hell/Dunkel into data-theme on <html>. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111315; --side:#15181B; --surface:#1B1F23; --surface-2:#22272C; --line:#2C3238; --line-2:#262B30;
+  --ink:#ECEEF0; --ink-2:#B5BAC1; --ink-3:#8E949C;
+  --accent:#5FB8AE; --accent-soft:#1D3533; --accent-ink:#9FE0D6; --on-accent:#0B1514;
+  --hero:#0A0C0E; --hero-ink:#FFFFFF; --hero-2:#B5BAC1; --hero-track:#262B30;
+  --c-income:#7FA9D6; --c-bills:#5FB8AE; --c-expenses:#E0A447; --c-savings:#72C28F; --c-debts:#E07A62; --c-transfer:#8E949C;
+  --good:#6FC593; --warn:#E3A451; --bad:#F08A76; --warn-soft:#3A2F1C; --bad-soft:#3D2420; --good-soft:#1F3A2A;
+  --track:#2C3238; --shadow:none;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -96,7 +97,7 @@ header.top h1{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1
 .toast{bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 @media (max-width:900px){.toast{bottom:calc(88px + env(safe-area-inset-bottom,0px))}}
 
-main{display:grid;gap:20px}
+main{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
 .banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;background:var(--accent-soft);border-radius:14px;padding:14px 18px;font-size:14px}
 .banner.warn{background:var(--warn-soft)}
 .banner.bad{background:var(--bad-soft)}
@@ -193,7 +194,8 @@ td.over .ist-link{color:var(--bad)}
 
 /* Transactions */
 .filters{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:10px}
-@media (max-width:760px){.filters{grid-template-columns:1fr 1fr}}
+.filters.nk{grid-template-columns:2fr 1fr 2fr}
+@media (max-width:760px){.filters,.filters.nk{grid-template-columns:1fr 1fr}.filters.nk>:last-child{grid-column:1/-1}}
 .field{display:grid;gap:4px;min-width:0}
 .field label{font-size:12px;color:var(--ink-3);font-weight:600}
 .field input,.field select,select.inline{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 12px;width:100%;min-width:0}
@@ -218,7 +220,7 @@ select.inline{padding:4px 8px;font-size:13px;width:auto;max-width:220px;backgrou
 .cycle.c182{background:#F3E7CF;color:#7A5418}
 .cycle.c365{background:#EEDCEB;color:#74325F}
 .cycle.c7,.cycle.c14{background:#E6E3F3;color:#463A7A}
-@media (prefers-color-scheme:dark){.cycle{filter:brightness(.78) saturate(1.25)}}
+:root[data-theme="dark"] .cycle{filter:brightness(.78) saturate(1.25)}
 tr.ignored td{opacity:.5}
 tr.ended td{opacity:.6}
 .state-btns{display:flex;gap:4px;justify-content:flex-end}
@@ -288,7 +290,7 @@ tr.urgent-row td:first-child{box-shadow:inset 3px 0 0 var(--bad)}
 
 /* Areas: property management uses violet */
 body[data-area="verwaltung"]{--accent:#5B45B8;--accent-soft:#E9E4FA;--accent-ink:#43328C}
-@media (prefers-color-scheme:dark){body[data-area="verwaltung"]{--accent:#A99CF0;--accent-soft:#2A2548;--accent-ink:#D2CAFF;--on-accent:#15122A}}
+:root[data-theme="dark"] body[data-area="verwaltung"]{--accent:#A99CF0;--accent-soft:#2A2548;--accent-ink:#D2CAFF;--on-accent:#15122A}
 /* Budget average per category */
 .avg-hint{display:block;font-size:11.5px;color:var(--ink-3);margin-top:2px;font-weight:400}
 button.avg-hint{background:none;border:0;padding:0;font:inherit;font-size:11.5px;cursor:pointer;text-align:left}
@@ -398,5 +400,10 @@ button.avg-hint{background:none;border:0;padding:0;font:inherit;font-size:11.5px
 .prop-card .top3 b{display:block;font-size:22px;font-weight:600}
 .badge{padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);font-size:12px;font-weight:600;white-space:nowrap}
 .cost-split{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink-2)}
-@media (prefers-color-scheme:dark){.hero,.tile.dark{border:1px solid var(--line)}}
+:root[data-theme="dark"] .hero,:root[data-theme="dark"] .tile.dark{border:1px solid var(--line)}
 @media (max-width:900px){.overline .prange{flex-basis:100%}.overline .prange:not(:empty)::before{content:""}}
+/* Theme switch in the sidebar footer (and in settings on mobile) */
+.theme-sw{display:flex;gap:2px;padding:3px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line)}
+.theme-sw button{flex:1;border:0;background:none;padding:5px 6px;border-radius:7px;font-size:12px;color:var(--ink-3);display:flex;align-items:center;justify-content:center;gap:5px}
+.theme-sw button svg{width:14px;height:14px}
+.theme-sw button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
