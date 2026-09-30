@@ -190,7 +190,8 @@ type TxnFilter struct {
 	PropertyID  int64
 	Limit       int
 	// Uncategorized keeps only what the classifier could not place
-	// (Sonstiges / Sonstige Einnahmen) and nobody has confirmed by hand.
+	// (Sonstiges / Sonstige Einnahmen) and that neither a hand choice nor
+	// one of the user's rules has confirmed.
 	Uncategorized bool
 }
 
@@ -213,7 +214,7 @@ func (s *Store) Transactions(ctx context.Context, f TxnFilter) ([]Transaction, e
 		where = append(where, "t.category_id = "+arg(f.CategoryID))
 	}
 	if f.Uncategorized {
-		where = append(where, "c.slug IN ('sonstiges','einnahmen-sonst') AND t.category_source <> 'manual'")
+		where = append(where, "c.slug IN ('sonstiges','einnahmen-sonst') AND t.category_source = 'auto'")
 	}
 	if f.Group != "" {
 		where = append(where, "c.grp = "+arg(f.Group))

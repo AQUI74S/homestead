@@ -363,6 +363,10 @@ document.addEventListener('click', async e=>{
     if(act==='take-avg'){ await api('PUT',`/api/categories/${b.dataset.cat}/budget`,{amount:+b.dataset.amount}); toast('Budget übernommen',2000); viewMonat(); return; }
     if(act==='show-uncat'){ S.txFilter={q:'',account:'',cat:'uncat',group:''}; }
     if(act==='rule'){ await api('PATCH',`/api/transactions/${b.dataset.tx}`,{category_id:+b.dataset.cat, rule:true}); toast('Regel gespeichert, alle passenden Umsätze neu zugeordnet',4000); loadTx(); }
+    if(act==='confirm-cat'){ const id=+b.dataset.tx, cat=+b.dataset.cat; await api('PATCH',`/api/transactions/${id}`,{category_id:cat});
+      const merchant=b.closest('tr')?.dataset.merchant;
+      toast(`<span>Bestätigt: bleibt bei „${esc(catById(cat)?.name)}“.</span>${merchant?`<button class="btn small" data-act="rule" data-tx="${id}" data-cat="${cat}">Alle von ${esc(merchant)} so lassen</button>`:''}`, 9000);
+      loadTx(); return; }
     if(act==='reset-tx'){ await api('PATCH',`/api/transactions/${b.dataset.tx}`,{reset:true}); toast('Wieder automatisch zugeordnet',2500); loadTx(); }
     if(act==='rec-status'){ const cur=b.dataset.cur; const next=cur===b.dataset.status?'detected':b.dataset.status; await api('PATCH',`/api/recurring/${b.dataset.id}`,{status:next}); viewAbos(); }
     if(act==='rec-tx'){ S.txFilter={q:'',account:'',cat:'',group:'',recurring:b.dataset.id}; S.month=''; location.hash='#umsaetze'; }
@@ -441,6 +445,8 @@ function forecastHTML(ov){
 }
 
 /* ---------- Transactions ---------- */
+// Catch-all categories: a transaction here counts as "nicht zugeordnet" until confirmed
+const UNCAT_SLUGS=['sonstiges','einnahmen-sonst'];
 function catOptions(sel, withEmpty){
   let o = withEmpty?`<option value="">Alle Kategorien</option>`:'';
   for(const g of Object.keys(GROUPS)){
@@ -483,7 +489,7 @@ async function loadTx(){
       <td class="tnum">${dmy(t.date)}</td>
       <td><div class="tx-main"><b>${esc(t.merchant||t.counterparty||'–')}${t.recurring_id?' <span class="src" title="Wiederkehrende Zahlung">↻</span>':` <button class="btn ghost small" data-act="as-contract" data-tx="${t.id}" title="Als wiederkehrenden Vertrag anlegen">↻ Als Vertrag</button>`}</b><span class="muted small clip" title="${esc(t.remittance)}">${esc(t.remittance)}</span></div></td>
       <td class="small">${esc(t.account)}<br><span class="muted">${esc(nameOf(t.owner))}</span></td>
-      <td><select class="inline" data-txcat="${t.id}" aria-label="Kategorie" title="${esc(t.reason)}">${catOptions(t.category_id,false)}</select>${srcLabel[t.source]?`<span class="src ${t.source}" title="${esc(t.reason)}">${srcLabel[t.source]}</span>`:''}${t.source==='manual'?` <button class="btn ghost small" data-act="reset-tx" data-tx="${t.id}" title="Wieder automatisch zuordnen">↺</button>${t.merchant?`<br><button class="btn small" style="margin-top:4px" data-act="rule" data-tx="${t.id}" data-cat="${t.category_id}">Für alle von ${esc(t.merchant)} übernehmen</button>`:''}`:''}</td>
+      <td><select class="inline" data-txcat="${t.id}" aria-label="Kategorie" title="${esc(t.reason)}">${catOptions(t.category_id,false)}</select>${t.source==='auto'&&UNCAT_SLUGS.includes(t.category_slug)?` <button class="btn small" data-act="confirm-cat" data-tx="${t.id}" data-cat="${t.category_id}" title="Kategorie stimmt – nicht mehr als „nicht zugeordnet“ zählen">✓ Passt so</button>`:''}${srcLabel[t.source]?`<span class="src ${t.source}" title="${esc(t.reason)}">${srcLabel[t.source]}</span>`:''}${t.source==='manual'?` <button class="btn ghost small" data-act="reset-tx" data-tx="${t.id}" title="Wieder automatisch zuordnen">↺</button>${t.merchant?`<br><button class="btn small" style="margin-top:4px" data-act="rule" data-tx="${t.id}" data-cat="${t.category_id}">Für alle von ${esc(t.merchant)} übernehmen</button>`:''}`:''}</td>
       <td class="r tnum ${t.amount>0?'amt-in':'amt-out'}">${E(t.amount)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty">Keine Umsätze für diese Auswahl.</div>`;
 }

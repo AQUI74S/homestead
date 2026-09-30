@@ -85,7 +85,7 @@ func (s *Store) Report(ctx context.Context, pc *PeriodCalc, month string) (*Mont
 		rep.IncomeBy[o] = v
 	}
 	err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
-		WHERE a.active AND a.book='haushalt' AND c.slug IN ('sonstiges','einnahmen-sonst') AND t.category_source <> 'manual' AND t.booking_date >= $1 AND t.booking_date < $2`, start, end).Scan(&rep.Uncategorized)
+		WHERE a.active AND a.book='haushalt' AND c.slug IN ('sonstiges','einnahmen-sonst') AND t.category_source = 'auto' AND t.booking_date >= $1 AND t.booking_date < $2`, start, end).Scan(&rep.Uncategorized)
 	return rep, err
 }
 
