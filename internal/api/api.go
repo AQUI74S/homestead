@@ -287,6 +287,9 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	fc := forecast.Compute(rec, start, end, today)
+	if pc.Mode == "salary" {
+		fc.DropNextSalary(pc.SeriesID, start)
+	}
 	var incomeIst, outIst, budgetRest int64
 	for _, l := range rep.Lines {
 		switch l.Group {

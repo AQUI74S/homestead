@@ -91,6 +91,7 @@ type Balance struct {
 	BalanceAmount Amount `json:"balance_amount"`
 	BalanceType   string `json:"balance_type"`
 	ReferenceDate string `json:"reference_date"`
+	LastChange    string `json:"last_change_date_time"`
 }
 
 type Party struct {

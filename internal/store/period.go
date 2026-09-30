@@ -20,7 +20,12 @@ type PeriodCalc struct {
 	SeriesName string
 	byLabel    map[string]time.Time // month label -> actual salary date
 	typDay     int                  // usual day of month (for extrapolation)
+	today      time.Time            // reference day for salaries that are due but not booked yet
 }
+
+// salaryGraceDays is how long a new period waits for a late salary before it
+// starts on the usual salary day anyway.
+const salaryGraceDays = 7
 
 // labelOf maps a salary date to the month it funds.
 func labelOf(d time.Time) string { return d.AddDate(0, 0, 10).Format("2006-01") }
@@ -30,7 +35,9 @@ func (s *Store) PeriodCalc(ctx context.Context) (*PeriodCalc, error) {
 	if err != nil {
 		return nil, err
 	}
-	pc := &PeriodCalc{Mode: st["period_mode"], byLabel: map[string]time.Time{}}
+	now := time.Now()
+	pc := &PeriodCalc{Mode: st["period_mode"], byLabel: map[string]time.Time{},
+		today: time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)}
 	if pc.Mode != "calendar" {
 		pc.Mode = "salary"
 	}
@@ -99,6 +106,11 @@ func (pc *PeriodCalc) start(label time.Time) time.Time {
 		}
 		c := time.Date(m.Year(), m.Month(), day, 0, 0, 0, 0, time.UTC)
 		if labelOf(c) == first.Format("2006-01") {
+			// The salary is due (or a few days overdue) but not booked yet: the new
+			// period only starts once it arrives, so today still belongs to the old one.
+			if !pc.today.IsZero() && !c.After(pc.today) && pc.today.Sub(c) <= salaryGraceDays*24*time.Hour {
+				return pc.today.AddDate(0, 0, 1)
+			}
 			return c
 		}
 	}

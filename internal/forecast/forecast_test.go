@@ -2,6 +2,7 @@ package forecast
 
 import (
 	"testing"
+	"time"
 
 	"github.com/AQUI74S/homestead/internal/store"
 )
@@ -65,5 +66,17 @@ func TestWeekendShift(t *testing.T) {
 	res = Compute(rec, day("2027-02-01"), day("2027-03-01"), day("2026-09-10"))
 	if len(res.Items) != 1 || res.Items[0].Date != "2027-02-28" {
 		t.Fatalf("February: %+v", res.Items)
+	}
+}
+
+func TestDropNextSalary(t *testing.T) {
+	res := Result{OpenIn: 350000, Items: []Item{
+		{RecurringID: 1, Date: "2026-08-29", Amount: 340000, Status: "bezahlt"},
+		{RecurringID: 1, Date: "2026-09-30", Amount: 340000, Status: "offen"},
+		{RecurringID: 2, Date: "2026-09-10", Amount: 10000, Status: "offen"},
+	}}
+	res.DropNextSalary(1, time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC))
+	if len(res.Items) != 2 || res.OpenIn != 10000 {
+		t.Errorf("next salary not removed: %+v", res)
 	}
 }

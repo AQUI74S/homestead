@@ -229,24 +229,36 @@ func (s *Syncer) fetch(ctx context.Context, uid string, from, to time.Time) ([]s
 	return out, nil
 }
 
-// pickBalance prefers the booked balance, otherwise the first available one.
+// pickBalance returns the most current balance. Banks often report the closing
+// booked balance (CLBD) of the previous day next to an interim balance that already
+// includes today's bookings; the newest date wins, then the balance type in the
+// order below.
 func pickBalance(bals []eb.Balance) (int64, bool) {
-	prefer := []string{"CLBD", "ITBD", "XPCD", "ITAV", "CLAV", "OPBD"}
-	for _, t := range prefer {
-		for _, b := range bals {
-			if b.BalanceType == t {
-				if c, err := eb.ParseCents(b.BalanceAmount.Amount); err == nil {
-					return c, true
-				}
-			}
+	rank := map[string]int{"ITBD": 0, "XPCD": 1, "CLBD": 2, "ITAV": 3, "CLAV": 4, "OPBD": 5}
+	date := func(b eb.Balance) string {
+		if b.LastChange != "" && len(b.LastChange) >= 10 && b.LastChange[:10] > b.ReferenceDate {
+			return b.LastChange[:10]
+		}
+		return b.ReferenceDate
+	}
+	rk := func(b eb.Balance) int {
+		if r, ok := rank[b.BalanceType]; ok {
+			return r
+		}
+		return len(rank)
+	}
+	best := -1
+	var bestCents int64
+	for i, b := range bals {
+		c, err := eb.ParseCents(b.BalanceAmount.Amount)
+		if err != nil {
+			continue
+		}
+		if best < 0 || date(b) > date(bals[best]) || (date(b) == date(bals[best]) && rk(b) < rk(bals[best])) {
+			best, bestCents = i, c
 		}
 	}
-	if len(bals) > 0 {
-		if c, err := eb.ParseCents(bals[0].BalanceAmount.Amount); err == nil {
-			return c, true
-		}
-	}
-	return 0, false
+	return bestCents, best >= 0
 }
 
 // Reclassify reclassifies all transactions (except manually set ones) and updates the

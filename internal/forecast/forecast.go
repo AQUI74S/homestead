@@ -115,3 +115,22 @@ func withDay(d time.Time, dd int) time.Time {
 	}
 	return time.Date(d.Year(), d.Month(), dd, 0, 0, 0, 0, time.UTC)
 }
+
+// DropNextSalary removes open occurrences of the salary series after the period
+// start. In a salary-to-salary period such a payment funds the next period, even if
+// it is due (or a few days late) before this period ends.
+func (r *Result) DropNextSalary(seriesID int64, periodStart time.Time) {
+	if seriesID == 0 {
+		return
+	}
+	s := periodStart.Format("2006-01-02")
+	kept := r.Items[:0]
+	for _, it := range r.Items {
+		if it.RecurringID == seriesID && it.Status != "bezahlt" && it.Date > s && it.Amount > 0 {
+			r.OpenIn -= it.Amount
+			continue
+		}
+		kept = append(kept, it)
+	}
+	r.Items = kept
+}
