@@ -15,6 +15,27 @@ type Rule struct {
 	CategoryID int64            `json:"category_id"`
 	Slug       string           `json:"category_slug"`
 	CreatedAt  time.Time        `json:"created_at"`
+	Hits       int              `json:"hits"` // transactions the rule categorizes (set by the API)
+}
+
+// RuleHits counts the rule-categorized transactions per reason text.
+func (s *Store) RuleHits(ctx context.Context) (map[string]int, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT reason, count(*) FROM transactions WHERE category_source=$1 GROUP BY reason`,
+		domain.SourceRule)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hits := map[string]int{}
+	for rows.Next() {
+		var reason string
+		var n int
+		if err := rows.Scan(&reason, &n); err != nil {
+			return nil, err
+		}
+		hits[reason] = n
+	}
+	return hits, rows.Err()
 }
 
 func (s *Store) Rules(ctx context.Context) ([]Rule, error) {

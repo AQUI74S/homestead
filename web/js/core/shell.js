@@ -16,6 +16,7 @@ const AREAS = {
       ['umsaetze', 'Umsätze'],
       ['abos', 'Abos & Fixkosten'],
       ['paar', 'Paar-Aufteilung'],
+      ['kategorien', 'Kategorien & Regeln'],
       ['konten', 'Konten'],
     ],
   },
@@ -46,6 +47,7 @@ const ICONS = {
   paar: svg(
     '<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M15.5 14.6c2.9.2 5.5 2 5.5 5.4"/>',
   ),
+  kategorien: svg('<path d="M3 12.5V4a1 1 0 0 1 1-1h8.5l8.5 8.5-9.5 9.5z"/><circle cx="8" cy="8" r="1.5"/>'),
   konten: svg('<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 21h18"/>'),
   hv: svg(
     '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
@@ -65,6 +67,7 @@ const NAV_SHORT = {
   monat: 'Budget',
   abos: 'Abos',
   paar: 'Paar',
+  kategorien: 'Regeln',
   hv: 'Übersicht',
   'hv-mieter': 'Mieter',
   'hv-umsaetze': 'Mietkonto',

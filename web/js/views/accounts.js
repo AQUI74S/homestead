@@ -1,4 +1,4 @@
-// Accounts: bank connections, account settings, budget month, rules, appearance.
+// Accounts: bank connections, account settings, budget month, appearance.
 import {
   BANK_RESULTS,
   BOOK_HOUSEHOLD,
@@ -11,7 +11,6 @@ import {
   OWNER_JOINT,
   PERIOD_CALENDAR,
   PERIOD_SALARY,
-  RULE_FIELDS,
   TIMING,
 } from '../core/constants.js';
 import { E, ago, dmy, esc, hm, ibanBlocks } from '../core/format.js';
@@ -27,10 +26,9 @@ const bankMatches = b => !S.bankFilter || b.name.toLowerCase().includes(S.bankFi
 
 async function viewAccounts(book = BOOK_HOUSEHOLD) {
   const household = book === BOOK_HOUSEHOLD;
-  const [allAccounts, allConns, rules, recs] = await Promise.all([
+  const [allAccounts, allConns, recs] = await Promise.all([
     get('/api/accounts'),
     get('/api/connections'),
-    get('/api/rules'),
     get('/api/recurring'),
   ]).then(r => r.map(x => x || []));
   const accs = allAccounts.filter(a => (a.book || BOOK_HOUSEHOLD) === book);
@@ -64,7 +62,6 @@ async function viewAccounts(book = BOOK_HOUSEHOLD) {
       `<p class="note">${others === 1 ? 'Ein weiteres Konto gehört' : others + ' weitere Konten gehören'} zum
       Bereich ${household ? '<a href="#hv-konten">Hausverwaltung</a>' : '<a href="#konten">Haushaltsbuch</a>'}.</p>`,
     )}
-    ${when(household, () => rulesHTML(rules))}
     <section class="ledger"><header><h2>Erscheinungsbild</h2><span class="sum">Auto folgt der Einstellung deines Geräts.
       Die Wahl gilt für diesen Browser.</span></header>
       <div class="theme-slot" style="max-width:340px;padding:4px 18px 18px">${themeSwitchHTML()}</div></section>
@@ -211,22 +208,6 @@ function periodSettingsHTML(series) {
       eigene Namen zu nicht verbundenen Konten zählen als „Sparen“.</p></section>`;
 }
 
-function rulesHTML(rules) {
-  const catName = r => S.cats.find(c => c.id === r.category_id)?.name || r.category_slug;
-  const rows = rules.map(
-    r => `<tr><td>${RULE_FIELDS[r.field]}</td><td><b>${esc(r.pattern)}</b></td><td>${esc(catName(r))}</td>
-      <td class="r"><button class="btn ghost small danger" data-act="del-rule" data-id="${r.id}">Löschen</button></td></tr>`,
-  );
-  return `<section class="ledger"><header><h2>Eigene Regeln</h2><span class="sum">entstehen, wenn du einen Umsatz umsortierst
-      und „Alle … so zuordnen“ wählst</span></header>
-    ${
-      rules.length
-        ? `<div class="tbl-scroll"><table><thead><tr><th>Wenn</th><th>enthält</th><th>dann</th><th></th></tr></thead>
-      <tbody>${rows.join('')}</tbody></table></div>`
-        : '<div class="empty">Noch keine eigenen Regeln.</div>'
-    }</section>`;
-}
-
 function bankButtons(list) {
   if (!list.length) return '<div class="empty">Keine Bank gefunden.</div>';
   return list
@@ -305,9 +286,4 @@ onClick('disconnect', async el => {
   await api('DELETE', `/api/connections/${el.dataset.id}`);
   toast('Verbindung getrennt', TIMING.toastMedium);
   reload();
-});
-onClick('del-rule', async el => {
-  await api('DELETE', `/api/rules/${el.dataset.id}`);
-  toast('Regel gelöscht', TIMING.toastShort);
-  viewAccounts(BOOK_HOUSEHOLD);
 });

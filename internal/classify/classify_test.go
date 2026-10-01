@@ -234,3 +234,28 @@ func TestCleanRemittance(t *testing.T) {
 		}
 	}
 }
+
+func TestRuleOrder(t *testing.T) {
+	rules := []Rule{ // newest first, as stored
+		{Field: domain.RuleMerchant, Pattern: "gemeindekasse musterdorf", Slug: "steuern"},
+		{Field: domain.RuleRemittance, Pattern: "kindergarten", Slug: "kita-eigene"},
+	}
+	OrderRules(rules)
+	ctx := Context{Rules: rules}
+	kita := Txn{AmountCents: -10600, Counterparty: "Gemeindekasse Musterdorf", Remittance: "501407 KINDERGARTEN"}
+	tax := Txn{AmountCents: -18000, Counterparty: "Gemeindekasse Musterdorf", Remittance: "Grundsteuer B"}
+	Classify(&kita, ctx)
+	Classify(&tax, ctx)
+	if kita.Slug != "kita-eigene" || tax.Slug != "steuern" || kita.Source != domain.SourceRule {
+		t.Errorf("kita=%s (%s) tax=%s", kita.Slug, kita.Reason, tax.Slug)
+	}
+	if kita.Reason != "Eigene Regel: Verwendungszweck enthält „kindergarten“" {
+		t.Errorf("reason: %s", kita.Reason)
+	}
+	// umlauts and punctuation don't matter
+	fee := Txn{AmountCents: -4500, Counterparty: "Stadt", Remittance: "MUELL-GEBUEHR 2026"}
+	Classify(&fee, Context{Rules: []Rule{{Field: domain.RuleRemittance, Pattern: "müll gebühr", Slug: "haus-garten"}}})
+	if fee.Slug != "haus-garten" {
+		t.Errorf("umlaut rule: %s", fee.Slug)
+	}
+}

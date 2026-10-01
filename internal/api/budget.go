@@ -29,29 +29,6 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) error {
 		NameA: settings[domain.SettingNameA], NameB: settings[domain.SettingNameB]})
 }
 
-func (s *Server) categories(w http.ResponseWriter, r *http.Request) error {
-	cats, err := s.st.Categories(r.Context())
-	if err != nil {
-		return err
-	}
-	return reply(w, cats)
-}
-
-func (s *Server) createCategory(w http.ResponseWriter, r *http.Request) error {
-	var in struct {
-		Group domain.Group
-		Name  string
-	}
-	if err := decode(r, &in); err != nil || !in.Group.Valid() || strings.TrimSpace(in.Name) == "" {
-		return badRequest("Bereich und Name angeben")
-	}
-	id, err := s.st.CreateCategory(r.Context(), in.Group, strings.TrimSpace(in.Name))
-	if err != nil {
-		return err
-	}
-	return withID(w, http.StatusCreated, id)
-}
-
 func (s *Server) setBudget(w http.ResponseWriter, r *http.Request) error {
 	id, ok := pathID(r)
 	var in struct {

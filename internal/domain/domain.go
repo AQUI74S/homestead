@@ -43,6 +43,10 @@ func (g Group) Valid() bool {
 	return false
 }
 
+// ForCustomCategory reports whether the user may put own categories into the
+// group. Transfers between own accounts are recognized, never chosen.
+func (g Group) ForCustomCategory() bool { return g.Valid() && g != GroupTransfer }
+
 // Direction of a payment: money coming in or going out.
 type Direction string
 
@@ -143,6 +147,30 @@ const (
 	RuleIBAN         RuleField = "iban"
 	RuleRemittance   RuleField = "remittance"
 )
+
+// Valid reports whether f is a known rule field.
+func (f RuleField) Valid() bool {
+	switch f {
+	case RuleMerchant, RuleCounterparty, RuleIBAN, RuleRemittance:
+		return true
+	}
+	return false
+}
+
+// Label is the name of the field as the user sees it.
+func (f RuleField) Label() string {
+	switch f {
+	case RuleMerchant:
+		return "Empfänger"
+	case RuleCounterparty:
+		return "Empfänger laut Bank"
+	case RuleIBAN:
+		return "IBAN"
+	case RuleRemittance:
+		return "Verwendungszweck"
+	}
+	return string(f)
+}
 
 // Keys in the settings table.
 const (

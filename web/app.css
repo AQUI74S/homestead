@@ -86,7 +86,7 @@ header.top h1{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1
   .areas{margin-left:auto;min-width:190px}
   .side-foot{display:none}
   .nav{position:fixed;left:0;right:0;bottom:0;z-index:7;flex-direction:row;gap:0;overflow-x:auto;background:var(--surface);border-top:1px solid var(--line);padding:6px 6px calc(8px + env(safe-area-inset-bottom,0px))}
-  .nav a{flex:1 0 72px;flex-direction:column;gap:3px;padding:6px 4px;font-size:11px;text-align:center;border-radius:8px;white-space:nowrap}
+  .nav a{flex:1 0 60px;flex-direction:column;gap:3px;padding:6px 4px;font-size:11px;text-align:center;border-radius:8px;white-space:nowrap}
   .nav a svg{width:22px;height:22px}
   .nav a[aria-current="page"]{background:transparent;color:var(--accent)}
   .content{padding:18px 16px 110px;gap:16px}
@@ -322,6 +322,18 @@ button.avg-hint{background:none;border:0;padding:0;font:inherit;font-size:11.5px
 .hero-legend span{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--hero-2)}
 .hero-legend span i{width:8px;height:8px;border-radius:2px}
 .hero-legend b{font-size:20px;font-weight:600}
+.rule-form{display:grid;grid-template-columns:200px minmax(0,1fr) 240px auto;gap:10px;align-items:end;padding:4px 18px 16px}
+.cat-form{display:grid;grid-template-columns:minmax(0,1fr) 200px auto;gap:10px;align-items:end;padding:4px 18px 16px}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:14px;padding:4px 18px 16px;align-items:start}
+.cat-group{border:1px solid var(--line);border-radius:14px;padding:12px 10px 8px;display:flex;flex-direction:column;gap:2px}
+.cat-group h3{margin:0 4px 6px;font-size:14px;display:flex;align-items:center;gap:8px}
+.cat-group h3::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--gc)}
+.cat-row{display:flex;align-items:center;gap:6px;min-height:36px}
+.cat-row select.inline{max-width:120px}
+input.inline{flex:1;min-width:0;border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 8px;font:inherit;font-size:14px;color:inherit}
+input.inline:hover{border-color:var(--line)}
+input.inline:focus{border-color:var(--accent);background:var(--surface);outline:none}
+@media (max-width:760px){.rule-form,.cat-form{grid-template-columns:1fr}}
 .hero-accts{border-top:1px solid var(--hero-track);padding-top:18px;display:flex;flex-direction:column;gap:12px}
 .hero-accts-h{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--hero-2)}
 .hero-accts-h b{color:var(--hero-ink);font-weight:600}

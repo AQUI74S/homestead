@@ -10,6 +10,7 @@ import './views/budget.js';
 import './views/transactions.js';
 import './views/recurring.js';
 import './views/couple.js';
+import './views/categories.js';
 import './views/accounts.js';
 import './views/hv/overview.js';
 import './views/hv/leases.js';

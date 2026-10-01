@@ -86,6 +86,7 @@ func (s *Syncer) classifyContext(ctx context.Context) (classify.Context, map[int
 	for _, r := range rules {
 		cctx.Rules = append(cctx.Rules, classify.Rule{Field: r.Field, Pattern: r.Pattern, Slug: r.Slug})
 	}
+	classify.OrderRules(cctx.Rules)
 	if accs, err := s.st.Accounts(ctx); err == nil {
 		var names []string
 		for _, a := range accs {

@@ -68,8 +68,8 @@ export const UNCATEGORIZED = 'uncat';
 export const SOURCE_LABELS = { manual: 'Hand', rule: 'Regel' };
 
 export const RULE_FIELDS = {
-  merchant: 'Händler',
-  counterparty: 'Empfänger',
+  merchant: 'Empfänger',
+  counterparty: 'Empfänger laut Bank',
   iban: 'IBAN',
   remittance: 'Verwendungszweck',
 };

@@ -22,17 +22,22 @@ func (s *Server) routes() []route {
 
 		// Household budget
 		{pattern: "GET /api/overview", handler: s.overview},
-		{pattern: "GET /api/categories", handler: s.categories},
-		{pattern: "POST /api/categories", handler: s.createCategory},
 		{pattern: "PUT /api/categories/{id}/budget", handler: s.setBudget},
 		{pattern: "POST /api/budgets/suggest", handler: s.suggestBudgets},
 		{pattern: "PUT /api/settings", handler: s.putSettings},
 
-		// Transactions and rules
+		// Transactions
 		{pattern: "GET /api/transactions", handler: s.transactions},
 		{pattern: "PATCH /api/transactions/{id}", handler: s.patchTransaction},
 		{pattern: "POST /api/accounts/{id}/import", handler: s.importCSV},
+
+		// Categories and own rules
+		{pattern: "GET /api/categories", handler: s.categories},
+		{pattern: "POST /api/categories", handler: s.createCategory},
+		{pattern: "PATCH /api/categories/{id}", handler: s.patchCategory},
+		{pattern: "DELETE /api/categories/{id}", handler: s.deleteCategory},
 		{pattern: "GET /api/rules", handler: s.rules},
+		{pattern: "POST /api/rules", handler: s.createRule},
 		{pattern: "DELETE /api/rules/{id}", handler: s.deleteRule},
 
 		// Recurring payments and contracts

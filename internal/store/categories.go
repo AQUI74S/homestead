@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -20,20 +21,64 @@ type Category struct {
 	Name        string       `json:"name"`
 	BudgetCents int64        `json:"budget"` // default budget per month
 	Sort        int          `json:"sort"`
+	Custom      bool         `json:"custom"` // created by the user: can be moved and deleted
+}
+
+const sqlCategory = `SELECT id, grp, slug, name, (budget*100)::bigint, sort, custom FROM categories`
+
+func scanCategory(sc scanner) (Category, error) {
+	var c Category
+	return c, sc.Scan(&c.ID, &c.Group, &c.Slug, &c.Name, &c.BudgetCents, &c.Sort, &c.Custom)
 }
 
 func (s *Store) Categories(ctx context.Context) ([]Category, error) {
-	return queryAll(ctx, s.DB, func(sc scanner) (Category, error) {
-		var c Category
-		return c, sc.Scan(&c.ID, &c.Group, &c.Slug, &c.Name, &c.BudgetCents, &c.Sort)
-	}, `SELECT id, grp, slug, name, (budget*100)::bigint, sort FROM categories ORDER BY grp, sort, name`)
+	return queryAll(ctx, s.DB, scanCategory, sqlCategory+` ORDER BY grp, sort, name`)
 }
 
+// CategoryByID returns a category or ErrNotFound.
+func (s *Store) CategoryByID(ctx context.Context, id int64) (Category, error) {
+	c, err := scanCategory(s.DB.QueryRowContext(ctx, sqlCategory+` WHERE id=$1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return c, ErrNotFound
+	}
+	return c, err
+}
+
+// CategoryNameTaken reports whether another category (not except) has this name.
+func (s *Store) CategoryNameTaken(ctx context.Context, name string, except int64) (bool, error) {
+	var taken bool
+	err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM categories WHERE lower(name)=lower($1) AND id<>$2)`,
+		strings.TrimSpace(name), except).Scan(&taken)
+	return taken, err
+}
+
+// CreateCategory adds a category of the user.
 func (s *Store) CreateCategory(ctx context.Context, group domain.Group, name string) (int64, error) {
 	var id int64
-	err := s.DB.QueryRowContext(ctx, `INSERT INTO categories(grp, slug, name, sort) VALUES ($1, $2, $3, $4) RETURNING id`,
+	err := s.DB.QueryRowContext(ctx, `INSERT INTO categories(grp, slug, name, sort, custom) VALUES ($1, $2, $3, $4, true) RETURNING id`,
 		group, slugify(name), name, customCategorySort).Scan(&id)
 	return id, err
+}
+
+// UpdateCategory renames a category and moves it to another group.
+func (s *Store) UpdateCategory(ctx context.Context, id int64, name string, group domain.Group) error {
+	return mustAffect(s.DB.ExecContext(ctx, `UPDATE categories SET name=$2, grp=$3 WHERE id=$1`, id, name, group))
+}
+
+// DeleteCategory removes a category of the user. Its transactions are handed
+// back to the automatic classification (also those set by hand), its rules and
+// budgets go with it. Returns the number of released transactions.
+func (s *Store) DeleteCategory(ctx context.Context, id int64) (int64, error) {
+	var released int64
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE transactions SET category_source=$2 WHERE category_id=$1`, id, domain.SourceAuto)
+		if err != nil {
+			return err
+		}
+		released, _ = res.RowsAffected()
+		return mustAffect(tx.ExecContext(ctx, `DELETE FROM categories WHERE id=$1 AND custom`, id))
+	})
+	return released, err
 }
 
 // slugify derives a unique slug from a category name.

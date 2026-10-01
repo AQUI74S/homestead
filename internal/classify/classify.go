@@ -2,6 +2,7 @@ package classify
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/AQUI74S/homestead/internal/domain"
@@ -23,7 +24,8 @@ type Txn struct {
 	Book             domain.Book // book of the own account
 }
 
-// Rule is a user rule: substring in a field -> category.
+// Rule is a user rule: substring in a field -> category. Classify checks the
+// rules in the order given; see OrderRules.
 type Rule struct {
 	Field   domain.RuleField
 	Pattern string
@@ -31,6 +33,31 @@ type Rule struct {
 }
 
 var reMatchClean = regexp.MustCompile(`[^a-z0-9&+]+`)
+
+// RuleReason is the reason stored with the transactions a user rule categorized.
+func RuleReason(r Rule) string {
+	return "Eigene Regel: " + r.Field.Label() + " enthält „" + r.Pattern + "“"
+}
+
+// rulePriority: rules on the remittance text describe the purpose of a payment
+// and are the most specific, so they win over rules on the payee (e.g. the
+// municipality collecting both kindergarten fees and property tax).
+var rulePriority = map[domain.RuleField]int{
+	domain.RuleRemittance: 0, domain.RuleCounterparty: 1, domain.RuleMerchant: 2, domain.RuleIBAN: 3,
+}
+
+// OrderRules sorts rules into the order Classify checks them; rules on the same
+// field keep their order.
+func OrderRules(rules []Rule) {
+	sort.SliceStable(rules, func(i, j int) bool { return rulePriority[rules[i].Field] < rulePriority[rules[j].Field] })
+}
+
+// containsText reports whether text contains pattern, ignoring case, umlaut
+// spelling and punctuation ("Müll-Gebühr" matches "muell gebuehr").
+func containsText(text, pattern string) bool {
+	p := strings.TrimSpace(normText(pattern))
+	return p != "" && strings.Contains(normText(text), p)
+}
 
 const (
 	// bankCodeCash is the ISO 20022 bank transaction code of a cash withdrawal.
@@ -130,7 +157,6 @@ func Classify(t *Txn, ctx Context) {
 	credit := t.AmountCents > 0
 	lowMerchant := strings.ToLower(t.Merchant)
 	lowCP := strings.ToLower(t.Counterparty)
-	lowRem := strings.ToLower(t.Remittance)
 	iban := domain.NormIBAN(t.CounterpartyIBAN)
 
 	// 1. User rules
@@ -142,16 +168,16 @@ func Classify(t *Txn, ctx Context) {
 		var hit bool
 		switch r.Field {
 		case domain.RuleMerchant:
-			hit = t.MerchantKey == p || strings.Contains(lowMerchant, p)
+			hit = t.MerchantKey == p || strings.Contains(lowMerchant, p) || containsText(t.Merchant, p)
 		case domain.RuleCounterparty:
-			hit = strings.Contains(lowCP, p)
+			hit = containsText(t.Counterparty, p)
 		case domain.RuleIBAN:
 			hit = iban != "" && iban == domain.NormIBAN(p)
 		case domain.RuleRemittance:
-			hit = strings.Contains(lowRem, p)
+			hit = containsText(t.Remittance, p)
 		}
 		if hit {
-			t.Slug, t.Source, t.Reason = r.Slug, domain.SourceRule, "Eigene Regel: "+string(r.Field)+" enthält „"+r.Pattern+"“"
+			t.Slug, t.Source, t.Reason = r.Slug, domain.SourceRule, RuleReason(r)
 			return
 		}
 	}

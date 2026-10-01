@@ -395,6 +395,72 @@ func TestDemoEndToEnd(t *testing.T) {
 	if stats.Total != totalBefore {
 		t.Errorf("duplicates after second sync: %d -> %d", totalBefore, stats.Total)
 	}
+
+	// Own category with a rule on the remittance text
+	var cat struct{ ID int64 }
+	if code := do("POST", "/api/categories", `{"group":"bills","name":"Betreuung"}`, &cat); code != 201 {
+		t.Fatalf("create category: %d", code)
+	}
+	if code := do("POST", "/api/categories", `{"group":"bills","name":" betreuung "}`, nil); code != 400 {
+		t.Errorf("duplicate category name: %d", code)
+	}
+	if code := do("POST", "/api/categories", `{"group":"transfer","name":"Umbuchung 2"}`, nil); code != 400 {
+		t.Errorf("own transfer category: %d", code)
+	}
+	if code := do("POST", "/api/rules", `{"field":"remittance","pattern":"ab","category_id":`+itoa(cat.ID)+`}`, nil); code != 400 {
+		t.Errorf("rule with a too short text: %d", code)
+	}
+	var hit struct{ Hits int }
+	if code := do("POST", "/api/rules", `{"field":"remittance","pattern":"Betreuungsbeitrag","category_id":`+itoa(cat.ID)+`}`, &hit); code != 200 || hit.Hits < 10 {
+		t.Errorf("remittance rule: code=%d hits=%d", code, hit.Hits)
+	}
+	var ruleList []store.Rule
+	do("GET", "/api/rules", "", &ruleList)
+	if len(ruleList) == 0 || ruleList[0].Pattern != "betreuungsbeitrag" || ruleList[0].Hits != hit.Hits {
+		t.Errorf("rules: %+v", ruleList)
+	}
+	do("GET", "/api/transactions?limit=1000&category_id="+itoa(cat.ID), "", &txs)
+	if len(txs) != hit.Hits {
+		t.Errorf("transactions in own category: %d, rule hits %d", len(txs), hit.Hits)
+	}
+
+	// Rename and move: own categories freely, built-in ones only rename
+	if code := do("PATCH", "/api/categories/"+itoa(cat.ID), `{"name":"Kita-Beitrag","group":"expenses"}`, nil); code != 200 {
+		t.Errorf("rename own category: %d", code)
+	}
+	var catList []store.Category
+	do("GET", "/api/categories", "", &catList)
+	var builtin int64
+	for _, c := range catList {
+		if c.ID == cat.ID && (c.Name != "Kita-Beitrag" || c.Group != "expenses" || !c.Custom) {
+			t.Errorf("own category after change: %+v", c)
+		}
+		if c.Slug == "lebensmittel" {
+			builtin = c.ID
+		}
+	}
+	if code := do("PATCH", "/api/categories/"+itoa(builtin), `{"group":"bills"}`, nil); code != 400 {
+		t.Errorf("move built-in category: %d", code)
+	}
+	if code := do("PATCH", "/api/categories/"+itoa(builtin), `{"name":"Supermarkt"}`, nil); code != 200 {
+		t.Errorf("rename built-in category: %d", code)
+	}
+	if code := do("DELETE", "/api/categories/"+itoa(builtin), "", nil); code != 400 {
+		t.Errorf("delete built-in category: %d", code)
+	}
+
+	// Deleting hands the transactions back to the automatic classification, the rule goes with it
+	var rel struct{ Released int }
+	if code := do("DELETE", "/api/categories/"+itoa(cat.ID), "", &rel); code != 200 || rel.Released != hit.Hits {
+		t.Errorf("delete own category: code=%d released=%d", code, rel.Released)
+	}
+	st.DB.QueryRow(`SELECT count(*) FROM rules WHERE pattern='betreuungsbeitrag'`).Scan(&cnt)
+	var back int
+	st.DB.QueryRow(`SELECT count(*) FROM transactions t JOIN categories c ON c.id=t.category_id
+		WHERE t.remittance LIKE 'Betreuungsbeitrag%' AND c.slug='kita-schule' AND t.category_source='auto'`).Scan(&back)
+	if cnt != 0 || back != hit.Hits {
+		t.Errorf("after deleting the category: rules=%d, back in kita-schule=%d of %d", cnt, back, hit.Hits)
+	}
 }
 
 func itoa(i int64) string {

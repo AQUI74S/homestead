@@ -106,28 +106,6 @@ func (s *Server) ruleFromTransaction(r *http.Request, txnID, categoryID int64) e
 	return s.st.ReleaseToRule(ctx, field, pattern, categoryID)
 }
 
-func (s *Server) rules(w http.ResponseWriter, r *http.Request) error {
-	rules, err := s.st.Rules(r.Context())
-	if err != nil {
-		return err
-	}
-	return reply(w, rules)
-}
-
-func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) error {
-	id, err := requireID(r)
-	if err != nil {
-		return err
-	}
-	if err := s.st.DeleteRule(r.Context(), id); err != nil {
-		return err
-	}
-	if err := s.sync.Reclassify(r.Context()); err != nil {
-		return err
-	}
-	return okReply(w)
-}
-
 type importResponse struct {
 	Added   int    `json:"added"`
 	Skipped int    `json:"skipped"`
