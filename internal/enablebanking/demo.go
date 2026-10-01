@@ -181,6 +181,9 @@ func generate(uid string, now time.Time) []Transaction {
 	g := &gen{uid: uid, r: rand.New(rand.NewSource(int64(len(uid)) * 7919))}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	start := time.Date(today.Year()-1, today.Month()-3, 1, 0, 0, 0, 0, time.UTC)
+	// an annual payment in the second month of the window falls into it twice,
+	// so it is detected as a yearly series whatever the current date
+	yearly := start.AddDate(0, 1, 0).Month()
 
 	for m := start; !m.After(today); m = m.AddDate(0, 1, 0) {
 		y, mo := m.Year(), m.Month()
@@ -213,8 +216,8 @@ func generate(uid string, now time.Time) []Transaction {
 			if mo == time.March {
 				g.add(dt(14), -8990, "AMAZON EU S.A R.L., NIEDERLASSUNG DEUTSCHLAND", "", "Prime Mitgliedschaft Jahresgebuehr", "")
 			}
-			if mo == time.June {
-				g.add(dt(3), -9400, "ADAC e.V.", "", "Mitgliedschaft ADAC Plus 2026", "")
+			if mo == yearly {
+				g.add(dt(3), -9400, "ADAC e.V.", "", "Mitgliedschaft ADAC Plus "+strconv.Itoa(y), "")
 			}
 			for d := 3; d <= 28; d += 8 + g.r.Intn(4) {
 				g.add(dt(d), -g.between(5200, 8900), "ARAL Station 1234//Musterstadt/DE", "", "Kartenzahlung girocard", "")

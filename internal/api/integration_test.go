@@ -207,6 +207,24 @@ func TestDemoEndToEnd(t *testing.T) {
 		t.Errorf("subscription total implausible: %d", ov.AboMonthly)
 	}
 
+	// Running month: the forecast starts from the account balances and ends before the next salary
+	var cur struct {
+		Accounts []store.Account      `json:"accounts"`
+		Forecast budget.MonthForecast `json:"forecast"`
+	}
+	do("GET", "/api/overview", "", &cur)
+	cf := cur.Forecast
+	sum, _, _ := budget.SumBalances(cur.Accounts)
+	if !cf.Current || cf.Balance != sum || sum == 0 {
+		t.Errorf("current month: current=%v balance=%d, accounts sum to %d", cf.Current, cf.Balance, sum)
+	}
+	if cf.CashProjected != cf.Balance+cf.OpenIn-cf.OpenOut-cf.BudgetRest {
+		t.Errorf("cash forecast %d != %d + %d - %d - %d", cf.CashProjected, cf.Balance, cf.OpenIn, cf.OpenOut, cf.BudgetRest)
+	}
+	if cf.NextSalary <= 0 || cf.NextSalaryOn == "" {
+		t.Errorf("next salary unknown: %d %q", cf.NextSalary, cf.NextSalaryOn)
+	}
+
 	// Recategorize with a rule: all Lieferando transactions to "Freizeit"
 	var txs []store.Transaction
 	do("GET", "/api/transactions?q=Lieferando&limit=5", "", &txs)

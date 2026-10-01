@@ -9,6 +9,8 @@ export const nf2 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, ma
 export const E = cents => eur.format((cents || 0) / 100);
 /** Cents as whole euros, e.g. "1.235 €". */
 export const E0 = cents => eur0.format((cents || 0) / 100);
+/** Whole euros with a sign, e.g. "+25 €" / "−130 €". */
+export const signedE0 = cents => (cents > 0 ? '+' : '') + E0(cents);
 /** Cents for an input field ("" for zero). */
 export const amountInput = cents => (cents ? nf2.format(cents / 100) : '');
 /** Area in 1/100 m². */
@@ -72,6 +74,12 @@ export function ago(iso) {
   if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`;
   return `vor ${Math.round(s / 86400)} Tagen`;
 }
+
+/** Local day and time of a timestamp, e.g. "30.09., 21:04". */
+export const stamp = iso => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}, ${hm(d)}`;
+};
 
 /** Clock time "14:05". */
 export const hm = d => new Date(d).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
