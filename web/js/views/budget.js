@@ -207,9 +207,9 @@ function heroHTML(ov, t, outIst, outBudget) {
     : `Monatsbilanz ${monthLabel(S.month)}`;
   const sub = cash
     ? `auf den Konten ${E0(f.balance)} · Monatsbilanz ${signedE0(result)} (${E0(t.income.ist)} Einnahmen) · ` +
-      `Sparquote ${quote}&nbsp;%`
+      `Sparquote&nbsp;${quote}&nbsp;%`
     : `von ${E0(t.income.ist)} Einnahmen${when(t.income.ist > 0, ` · ${pct}&nbsp;% übrig`)} · geplant frei ${E0(plan)} · ` +
-      `Sparquote ${quote}&nbsp;%`;
+      `Sparquote&nbsp;${quote}&nbsp;%`;
   const chip = f.past
     ? '<span class="chip">Monat abgeschlossen</span>'
     : `<span class="chip${big < 0 ? ' bad' : ''}">noch ${plural(daysLeft, 'Tag', 'Tage')}</span>`;
@@ -219,7 +219,27 @@ function heroHTML(ov, t, outIst, outBudget) {
         <div class="sub">${sub}</div></div>${chip}</div>
       <div class="stack" role="img" aria-label="Verwendung der Einnahmen">${stack}</div>
       <div class="hero-legend">${legend}</div>
+      ${balancesHTML(ov.accounts)}
     </div>`;
+}
+
+/** Current balance of each household account, at the bottom of the hero. */
+function balancesHTML(accounts) {
+  const accts = accounts.filter(a => a.active);
+  if (!accts.length) return '';
+  const total = accts.reduce((sum, a) => sum + (a.balance || 0), 0);
+  const items = accts
+    .map(a => {
+      const known = a.balance != null;
+      return `<div><span>${esc(accountName(a))}</span>
+        <b class="tnum${known && a.balance < 0 ? ' neg' : ''}">${known ? E(a.balance) : '–'}</b>
+        <small>${esc(a.bank)} · ${a.balance_at ? stamp(a.balance_at) : 'noch kein Stand'}</small></div>`;
+    })
+    .join('');
+  return `<div class="hero-accts"><div class="hero-accts-h"><span>Kontostände</span>${when(
+    accts.length > 1,
+    `<span>zusammen <b class="tnum">${E(total)}</b></span>`,
+  )}</div><div class="hero-accts-grid">${items}</div></div>`;
 }
 
 /** Group totals as bars: actual with a marker for the budget. */

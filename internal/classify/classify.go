@@ -192,7 +192,18 @@ func Classify(t *Txn, ctx Context) {
 		return
 	}
 
-	// 4. Expenses: merchant name (for Amazon/Apple/Google the remittance counts too,
+	// 4. Bank fees. The payee is often the bank itself, which may also be a lender
+	// (Targobank, Santander), so this comes before the merchant name.
+	if slug, w, ok := matchKeywords(t.Counterparty+" "+t.Remittance, []keywordRule{feeKeywords}); ok {
+		t.Slug, t.Reason = slug, "Stichwort „"+w+"“ (Bankentgelt)"
+		return
+	}
+	if isFeeCode(t.BankCode) {
+		t.Slug, t.Reason = domain.SlugBankFees, "Bankentgelt laut Bankcode"
+		return
+	}
+
+	// 5. Expenses: merchant name (for Amazon/Apple/Google the remittance counts too,
 	// since it contains e.g. "Prime" or "iCloud")
 	mtext := t.Merchant + " " + t.Counterparty
 	for _, m := range marketplaces {
@@ -211,12 +222,12 @@ func Classify(t *Txn, ctx Context) {
 		t.Slug, t.Reason = slug, "Bekannter Händler: "+t.Merchant
 		return
 	}
-	// 5. Keywords in remittance
+	// 6. Keywords in remittance
 	if slug, w, ok := matchKeywords(t.Remittance, debitKeywords); ok {
 		t.Slug, t.Reason = slug, "Stichwort „"+w+"“ im Verwendungszweck"
 		return
 	}
-	// 6. Bank transaction code for cash
+	// 7. Bank transaction code for cash
 	if isCashCode(t.BankCode) {
 		t.Slug, t.Reason = domain.SlugCash, "Bargeldauszahlung laut Bankcode"
 		return
@@ -225,6 +236,18 @@ func Classify(t *Txn, ctx Context) {
 }
 
 func isCashCode(code string) bool { return strings.Contains(strings.ToUpper(code), bankCodeCash) }
+
+// feeCodes are ISO 20022 bank transaction sub-families of charges the bank books itself.
+var feeCodes = map[string]bool{"CHRG": true, "FEES": true}
+
+func isFeeCode(code string) bool {
+	for _, f := range strings.Fields(strings.ToUpper(code)) {
+		if feeCodes[f] {
+			return true
+		}
+	}
+	return false
+}
 
 // IsAboMerchant reports whether the merchant is typically a subscription.
 func IsAboMerchant(name string) bool {

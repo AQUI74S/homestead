@@ -213,6 +213,9 @@ func generate(uid string, now time.Time) []Transaction {
 			g.add(dt(20), -2499, "Telefonica Germany GmbH + Co. OHG", "DE17700700100234567890", "o2 Rechnung Kd-Nr 6012345", "")
 			g.add(workday(dt(1), false), -2499, "FitX Deutschland GmbH", "", "Mitgliedsbeitrag "+mm, "")
 			g.add(dt(15), -28900, "Santander Consumer Bank AG", "DE50310108330000123456", "Rate Autofinanzierung Vertrag 887766", "")
+			if mo%3 == 0 { // quarterly account closing: fees minus interest
+				g.add(dt(lastDay), -1290, "Saldo der Abschlussposten", "", "Kontoabschluss "+strconv.Itoa(int(mo)/3)+". Quartal "+strconv.Itoa(y)+" 0,001% Habenzinsen", "")
+			}
 			if mo == time.March {
 				g.add(dt(14), -8990, "AMAZON EU S.A R.L., NIEDERLASSUNG DEUTSCHLAND", "", "Prime Mitgliedschaft Jahresgebuehr", "")
 			}

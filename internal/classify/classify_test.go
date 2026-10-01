@@ -19,6 +19,8 @@ func TestMerchant(t *testing.T) {
 		{"WP-ABRECHNUNG 0494152971001Kauf ISIN IE0", "WP-ABRECHNUNG 0494152971001Kauf ISIN IE00B60SX394 INVESCO", "wertpapier abrechnung", "Wertpapier-Abrechnung"},
 		{"", "WP-ABRECHNUNG 0494153093001Kauf ISIN IE00BD8KRH84 ISHSVII-C", "wertpapier abrechnung", "Wertpapier-Abrechnung"},
 		{"", "EREF+NOTPROVIDED SVWZ+Rewe Markt Musterstadt", "rewe musterstadt", "Rewe Markt Musterstadt"},
+		{"Saldo der Abschlussposten QM - Support 01234 Musterstadt", "Saldo der Abschlussposten QM - Support 01234 Musterstadt Kontoabschluss 3. Quartal 26 0,001% Habenzinsen", "kontoabschluss", "Kontoabschluss"},
+		{"", "Rechnungsabschluss per 30.09.2026", "kontoabschluss", "Kontoabschluss"},
 	}
 	for _, c := range cases {
 		d, k := Merchant(c.cp, c.rem)
@@ -76,6 +78,13 @@ func TestClassify(t *testing.T) {
 		{"Dividend without payee", 57, "", "", "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende ISIN IE00BD8KRH84 ISHSVII-C", "", "kapitalertraege"},
 		{"Interest from broker is no refund", 1234, "Trade Republic Bank GmbH", "", "Zinsgutschrift September", "", "kapitalertraege"},
 		{"Securities purchase", -70006, "", "", "WP-ABRECHNUNG 0494152971001Kauf ISIN IE00B60SX394 INVESCO", "", "sparen"},
+		{"Account closing, fees above interest", -1346, "Saldo der Abschlussposten QM - Support 01234 Musterstadt", "", "Saldo der Abschlussposten QM - Support 01234 Musterstadt Kontoabschluss 3. Quartal 26 0,001% Habenzinsen", "", "kontofuehrung"},
+		{"Account closing, interest above fees", 12, "", "", "Kontoabschluss 3. Quartal 26 0,25% Habenzinsen", "", "kapitalertraege"},
+		{"Fee from a bank that also lends", -690, "TARGOBANK AG", "", "Entgelt Kontoführung 09/2026", "", "kontofuehrung"},
+		{"Card fee is no credit card bill", -2900, "", "", "Jahresentgelt Kreditkarte 2026", "", "kontofuehrung"},
+		{"Overdraft interest", -823, "", "", "Sollzinsen 01.07.2026 - 30.09.2026", "", "kontofuehrung"},
+		{"Fee by bank code", -250, "", "", "Buchung 4711", "ACMT CHRG", "kontofuehrung"},
+		{"Salary payment is no fee", 341255, "Musterfirma GmbH", "", "Entgelt 09/2026", "", "gehalt"},
 		{"Insurance", -8733, "HUK-COBURG Allgemeine Versicherung AG", "", "Beitrag KFZ", "", "versicherung"},
 	}
 	for _, c := range cases {

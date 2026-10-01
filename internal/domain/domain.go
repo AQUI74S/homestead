@@ -170,6 +170,7 @@ const (
 	SlugOnlineShopping = "online-shopping"
 	SlugLeisure        = "freizeit"
 	SlugCash           = "bargeld"
+	SlugBankFees       = "kontofuehrung" // account fees, closings, overdraft interest
 )
 
 // CatchAllSlugs are the categories a transaction lands in when the classifier

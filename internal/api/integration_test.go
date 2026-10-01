@@ -180,6 +180,7 @@ func TestDemoEndToEnd(t *testing.T) {
 		"Santander Consumer Bank AG": "kredit/Monatlich",
 		"Trade Republic Bank GmbH":   "sparen/Monatlich",
 		"ADAC e.V.":                  "abo/Jährlich",
+		"Kontoabschluss":             "fixkosten/Vierteljährlich",
 	}
 	for label, k := range want {
 		if kinds[label] != k {

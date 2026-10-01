@@ -17,7 +17,9 @@ var (
 	reEinkaufBei = regexp.MustCompile(`(?i)ihr einkauf bei\s+([^,/]+)`)
 	// Securities settlements carry a unique order number: "WP-ABRECHNUNG 0494152971001Kauf ISIN …"
 	reWPAbrechnung = regexp.MustCompile(`(?i)^\s*(wp-?abrechnung|wertpapierabrechnung|wertpapier-abrechnung)\b`)
-	rePPDot        = regexp.MustCompile(`(?i)\bpp\.\d+\.pp\s*\.\s*([^,/]+)`)
+	// Periodic account closings: "Saldo der Abschlussposten …", "Kontoabschluss 3. Quartal"
+	reAccountClosing = regexp.MustCompile(`(?i)abschlussposten|kontoabschluss|rechnungsabschluss`)
+	rePPDot          = regexp.MustCompile(`(?i)\bpp\.\d+\.pp\s*\.\s*([^,/]+)`)
 	// Structured SEPA fields some banks put into the remittance text, often empty:
 	// "mandatereference:,creditorid:,remittanceinformation: Zins/Dividende …"
 	// or "EREF+… MREF+… SVWZ+Miete Oktober".
@@ -76,6 +78,9 @@ func Merchant(counterparty, remittance string) (display, key string) {
 	}
 	if reWPAbrechnung.MatchString(cp) || cp == "" && reWPAbrechnung.MatchString(remittance) {
 		return "Wertpapier-Abrechnung", "wertpapier abrechnung"
+	}
+	if reAccountClosing.MatchString(cp) {
+		return "Kontoabschluss", "kontoabschluss"
 	}
 	key = NormalizeKey(cp)
 	display = prettyName(cp)

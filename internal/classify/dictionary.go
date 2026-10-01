@@ -1,5 +1,7 @@
 package classify
 
+import "github.com/AQUI74S/homestead/internal/domain"
+
 // merchantRule maps merchant names (substrings, lowercase, umlauts as ae/oe/ue)
 // to a category. Specific entries come before general ones; the first match wins.
 type merchantRule struct {
@@ -105,6 +107,14 @@ var creditKeywords = []keywordRule{
 	{[]string{"dividende", "zinsgutschrift", "habenzins", "zinsen", "zins ", "ertragsausschuettung", "ausschuettung", "kapitalertrag", "coupon", "kupon"}, "kapitalertraege"},
 	{[]string{"erstattung", "rueckerstattung", "gutschrift", "refund", "storno", "retoure", "rueckzahlung", "rueckbuchung", "cashback"}, "erstattung"},
 }
+
+// feeKeywords mark what the bank charges for the account itself: fees, the
+// periodic account closing (fees minus interest) and overdraft interest.
+var feeKeywords = keywordRule{[]string{
+	"kontofuehrung", "kontoabschluss", "rechnungsabschluss", "abschlussposten", "entgeltabrechnung",
+	"kontoentgelt", "kontogebuehr", "kartenentgelt", "kartengebuehr", "kartenpreis", "jahresentgelt",
+	"auslandseinsatz", "sollzins", "dispozins", "ueberziehungszins", "verwahrentgelt", "postenentgelt",
+}, domain.SlugBankFees}
 
 var cashKeywords = keywordRule{[]string{"bargeldauszahlung", "geldautomat", "auszahlung gaa", " gaa ", "bargeld", "cash"}, "bargeld"}
 
