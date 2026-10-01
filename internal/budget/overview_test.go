@@ -40,3 +40,22 @@ func TestNextSalary(t *testing.T) {
 		t.Errorf("without salary series: %d %s", sum, date)
 	}
 }
+
+func TestForecastEnd(t *testing.T) {
+	end := day("2026-10-26") // usual salary day
+	cases := []struct {
+		next    string
+		current bool
+		want    string
+	}{
+		{"2026-11-01", true, "2026-11-01"},  // salary expected later: forecast until then
+		{"2026-11-01", false, "2026-10-26"}, // other months keep their period
+		{"2026-10-20", true, "2026-10-26"},  // earlier salary: never shorter than the period
+		{"", true, "2026-10-26"},            // no salary series
+	}
+	for _, c := range cases {
+		if got := forecastEnd(end, c.next, c.current).Format("2006-01-02"); got != c.want {
+			t.Errorf("forecastEnd(%q, %v) = %s, want %s", c.next, c.current, got, c.want)
+		}
+	}
+}

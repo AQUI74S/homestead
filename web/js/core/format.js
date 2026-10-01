@@ -64,6 +64,8 @@ export function shiftMonth(id, d) {
 export const calendarMonth = (d = new Date()) => monthId(d.getFullYear(), d.getMonth() + 1);
 /** Today as "YYYY-MM-DD" (UTC). */
 export const todayISO = () => new Date().toISOString().slice(0, 10);
+/** The day before an ISO date: "2026-11-01" -> "2026-10-31". */
+export const dayBefore = iso => new Date(Date.parse(iso + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
 
 /** Relative time, e.g. "vor 5 Min." */
 export function ago(iso) {

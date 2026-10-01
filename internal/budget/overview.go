@@ -51,6 +51,9 @@ type MonthForecast struct {
 	CashProjected int64      `json:"cash_projected"` // balance at the end of the month (before the salary)
 	NextSalary    int64      `json:"next_salary"`    // salary that starts the next month (0 = unknown)
 	NextSalaryOn  string     `json:"next_salary_on"` // its expected date
+	// Until is the end of the forecast (exclusive): the end of the period, or for
+	// the running month the expected next salary if that comes later.
+	Until string `json:"until"`
 }
 
 // LoadOverview computes the overview of a budget month ("" or invalid = current month).
@@ -90,11 +93,16 @@ func LoadOverview(ctx context.Context, st *store.Store, month string) (*Overview
 
 	start, end, _ := p.Range(month)
 	today := domain.Today()
-	fc := Compute(rec, start, end, today)
 	f := &ov.Forecast
+	f.Current = !start.After(today) && end.After(today)
+	if p.Mode == domain.PeriodSalary {
+		f.NextSalary, f.NextSalaryOn = nextSalary(rec, p.SeriesIDs, month, start, today)
+	}
+	until := forecastEnd(end, f.NextSalaryOn, f.Current)
+	f.Until = until.Format(domain.DateLayout)
+	fc := Compute(rec, start, until, today)
 	if p.Mode == domain.PeriodSalary {
 		fc.DropNextSalary(p.SeriesIDs, month)
-		f.NextSalary, f.NextSalaryOn = nextSalary(rec, p.SeriesIDs, month, start, today)
 	}
 	var varBudget, varIst int64
 	for _, l := range ov.Report.Lines {
@@ -110,7 +118,7 @@ func LoadOverview(ctx context.Context, st *store.Store, month string) (*Overview
 			}
 		}
 	}
-	f.BudgetRest, f.BudgetDays = VariableRest(varBudget, varIst, start, end, today)
+	f.BudgetRest, f.BudgetDays = VariableRest(varBudget, varIst, start, until, today)
 	ov.Upcoming = Upcoming(rec, today, today.AddDate(0, 0, upcomingDays))
 
 	f.Past = !end.After(today)
@@ -121,12 +129,22 @@ func LoadOverview(ctx context.Context, st *store.Store, month string) (*Overview
 	f.Items, f.OpenIn, f.OpenOut, f.OpenByKind = fc.Items, fc.OpenIn, fc.OpenOut, fc.OpenByKind
 	f.Projected = f.IncomeIst + fc.OpenIn - f.OutIst - fc.OpenOut - f.BudgetRest
 
-	f.Current = !start.After(today) && end.After(today)
 	if f.Current {
 		f.Balance, f.BalanceAt, f.NoBalance = SumBalances(ov.Accounts)
 		f.CashProjected = f.Balance + fc.OpenIn - fc.OpenOut - f.BudgetRest
 	}
 	return ov, nil
+}
+
+// forecastEnd returns where the forecast of a period stops (exclusive). The
+// period ends on the usual salary day; if the next salary is expected later (it
+// came late last time), everything due until then still has to be paid from the
+// accounts, so the forecast of the running month runs until the salary.
+func forecastEnd(end time.Time, nextSalaryOn string, current bool) time.Time {
+	if d := domain.ParseDate(nextSalaryOn); current && d.After(end) {
+		return d
+	}
+	return end
 }
 
 // SumBalances adds up the balances of the active accounts and returns the time of

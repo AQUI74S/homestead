@@ -22,6 +22,9 @@ const (
 	overdueAfterDays = 3
 	// maxForecastSteps bounds the due dates looked at per series.
 	maxForecastSteps = 60
+	// lateBookingDays: a booking this many days before the typical day of month
+	// is a late booking of the previous month (due on the 30th, booked on the 1st).
+	lateBookingDays = 15
 )
 
 // Item is one due date of a recurring payment.
@@ -65,6 +68,13 @@ func Compute(rec []store.Recurring, start, end, today time.Time) Forecast {
 		if f := domain.ParseDate(r.FirstDate); !f.IsZero() && f.Day() > typDay {
 			typDay = f.Day()
 		}
+		// Booked late across the month end (due on the 30th, booked on the 1st): the
+		// payment belongs to the month before, so count the next steps from there.
+		anchor := last
+		monthly := r.CycleDays.MonthBased() && r.CycleDays != domain.Yearly
+		if monthly && typDay-last.Day() > lateBookingDays {
+			anchor = time.Date(last.Year(), last.Month()-1, 1, 0, 0, 0, 0, time.UTC)
+		}
 		base := Item{RecurringID: r.ID, Label: r.Label, Kind: r.Kind, Manual: r.Manual, CategoryID: r.CategoryID, AccountID: r.AccountID}
 		// last actual payment falls within the range
 		if !r.Manual && !last.Before(start) && last.Before(end) {
@@ -76,8 +86,8 @@ func Compute(rec []store.Recurring, start, end, today time.Time) Forecast {
 			}
 		}
 		for k := 1; k <= maxForecastSteps; k++ {
-			d := r.CycleDays.Step(last, k)
-			if r.CycleDays.MonthBased() && r.CycleDays != domain.Yearly {
+			d := r.CycleDays.Step(anchor, k)
+			if monthly {
 				d = withDay(d, typDay)
 			}
 			if !d.Before(end) {

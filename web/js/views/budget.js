@@ -21,6 +21,7 @@ import {
   nf2,
   parseDE,
   plural,
+  dayBefore,
   signedE0,
   stamp,
   todayISO,
@@ -195,7 +196,8 @@ function heroHTML(ov, t, outIst, outBudget) {
     g =>
       `<div><span><i style="background:var(${HERO_COLORS[g]})"></i>${GROUPS[g].label}</span><b>${E0(t[g].ist)}</b></div>`,
   ).join('');
-  const daysLeft = Math.max(0, Math.ceil((new Date(ov.period.end + 'T23:59:59') - Date.now()) / DAY_MS));
+  const lastDay = f.current && f.until ? dayBefore(f.until) : ov.period.end;
+  const daysLeft = Math.max(0, Math.ceil((new Date(lastDay + 'T23:59:59') - Date.now()) / DAY_MS));
 
   // Running month: real money until the next salary. Other months: income minus spending.
   const cash = f.current;
@@ -335,6 +337,10 @@ function forecastHTML(ov) {
     `<li><span class="date-chip">${dm(i.date)}</span><span>${esc(i.label)} <span class="muted small">· ` +
     `${esc(categoryName(i))}</span></span><b class="tnum ${i.amount > 0 ? 'pos' : ''}">${E(i.amount)}</b></li>`;
 
+  const compactItem = i =>
+    `<li title="${esc(categoryName(i))}"><span class="date-chip">${dm(i.date)}</span><span class="clip">${esc(i.label)}</span>` +
+    `<b class="tnum ${i.amount > 0 ? 'pos' : ''}">${E(i.amount)}</b></li>`;
+
   if (f.past) {
     const more = paid.length - BUDGET.paidLimit;
     return `<div class="card"><h3>Abgeschlossen</h3><p class="muted" style="margin-top:0">Dieser Budgetmonat ist vorbei.
@@ -350,24 +356,26 @@ function forecastHTML(ov) {
 
   const fixed = (k.fixkosten || 0) + (k.kredit || 0);
   const other = (k.sparen || 0) + (k.sonstiges || 0) + (k.einkommen || 0);
-  const end = dm(ov.period.end);
+  const lastDay = f.current && f.until ? dayBefore(f.until) : ov.period.end;
+  const end = dm(lastDay);
   const salary = ov.period.mode === PERIOD_SALARY;
   const start = f.current
     ? line('Auf den Konten', E(f.balance), f.balance < 0 ? 'neg' : '')
     : line('Bisher übrig', E(result), result < 0 ? 'neg' : '');
   const total = f.current ? f.cash_projected : f.projected;
   const title = f.current ? (salary ? 'Bis zum nächsten Gehalt' : `Bis Monatsende ${end}`) : `Prognose bis ${end}`;
-  const notes = [
-    open.length
-      ? `${open.length} wiederkehrende Zahlungen bis ${end} noch offen.`
-      : `Bis ${end} ist nichts Wiederkehrendes mehr offen.`,
-  ];
+  const notes = open.length ? [] : [`Bis ${end} ist nichts Wiederkehrendes mehr offen.`];
   if (f.current && f.next_salary) {
     const due = f.next_salary_on < todayISO() ? 'seit' : 'am';
     notes.push(
       `Danach beginnt der neue Monat mit dem Gehalt (${E(f.next_salary)}, erwartet ${due} ${dm(f.next_salary_on)}).`,
     );
   }
+  if (f.current && lastDay > ov.period.end)
+    notes.push(
+      `Nach dem üblichen Gehaltstag endet der Budgetmonat schon am ${dm(ov.period.end)} Gerechnet wird trotzdem ` +
+        'bis zum erwarteten Gehalt, weil bis dahin alles noch von den Konten abgeht.',
+    );
   if (f.current && f.balance_at) notes.push(`Kontostände vom ${stamp(f.balance_at)}.`);
   if (f.current && f.no_balance)
     notes.push(`${plural(f.no_balance, 'Konto hat', 'Konten haben')} noch keinen Kontostand und fehlen in der Summe.`);
@@ -390,6 +398,11 @@ function forecastHTML(ov) {
     </div>
     <div class="fc-total"><span>${f.current ? 'Voraussichtlich übrig' : 'Voraussichtlich frei'}</span>
       <b class="tnum ${total < 0 ? 'neg' : ''}">${E(total)}</b></div>
+    ${when(
+      open.length,
+      () => `<details class="fc-items"><summary>${plural(open.length, 'wiederkehrende Zahlung', 'wiederkehrende Zahlungen')}
+        bis ${end} noch offen</summary><ul class="list">${open.map(compactItem).join('')}</ul></details>`,
+    )}
     <p class="note">${notes.join(' ')}</p></div>`;
 }
 
