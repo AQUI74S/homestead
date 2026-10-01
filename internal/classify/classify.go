@@ -43,9 +43,14 @@ const (
 // "Prime", "iCloud") decides the category rather than the payee name.
 var marketplaces = []string{"amazon", "apple", "google"}
 
-// utilitySlugs are categories of energy suppliers that often deliver several
-// utilities; the remittance text then decides which one.
-var utilitySlugs = map[string]bool{"strom": true, "gas": true, "wasser": true}
+// collectorKeywords: payees that collect for several categories, by the category
+// of their name. For them the remittance text decides; without a hint the
+// category of the name stays. Energy suppliers often deliver several utilities,
+// municipalities collect taxes but also kindergarten, water and waste fees.
+var collectorKeywords = map[string][]keywordRule{
+	"strom": utilityKeywords, "gas": utilityKeywords, "wasser": utilityKeywords,
+	"steuern": authorityKeywords,
+}
 
 // accountNameWords mark an account name as a product name rather than a person.
 var accountNameWords = []string{"konto", "giro", "spar", "tagesgeld", "depot", "karte", "card", "gemeinschaft", "plus", "komfort",
@@ -213,11 +218,9 @@ func Classify(t *Txn, ctx Context) {
 		}
 	}
 	if slug, _, ok := MatchMerchant(mtext); ok {
-		if utilitySlugs[slug] {
-			if s2, w, ok := matchKeywords(t.Remittance, utilityKeywords); ok {
-				t.Slug, t.Reason = s2, "Versorger "+t.Merchant+", Stichwort „"+w+"“"
-				return
-			}
+		if s2, w, ok := matchKeywords(t.Remittance, collectorKeywords[slug]); ok {
+			t.Slug, t.Reason = s2, t.Merchant+", Stichwort „"+w+"“ im Verwendungszweck"
+			return
 		}
 		t.Slug, t.Reason = slug, "Bekannter Händler: "+t.Merchant
 		return

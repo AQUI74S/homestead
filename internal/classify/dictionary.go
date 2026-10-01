@@ -13,7 +13,9 @@ type merchantRule struct {
 var merchants = []merchantRule{
 	// Broadcasting fee, taxes, authorities
 	{[]string{"beitragsservice", "rundfunk", "ard zdf"}, "rundfunk", false},
-	{[]string{"finanzamt", "bundeskasse", "hauptzollamt", "stadtkasse", "kreiskasse", "gemeindekasse", "gemeinde ", "zulassungsstelle"}, "steuern", false},
+	// (municipalities also collect kindergarten and water fees: see authorityKeywords)
+	{[]string{"finanzamt", "bundeskasse", "hauptzollamt", "stadtkasse", "kreiskasse", "gemeindekasse", "amtskasse", "gemeinde ",
+		"gemeindeverwaltung", "stadtverwaltung", "kreisverwaltung", "landratsamt", "zulassungsstelle"}, "steuern", false},
 	{[]string{"kita", "kindergarten", "kindertagesst", "schule", "hort ", "musikschule"}, "kita-schule", false},
 
 	// Mobile & internet (specific before discounters: "aldi talk" before "aldi")
@@ -117,6 +119,14 @@ var feeKeywords = keywordRule{[]string{
 }, domain.SlugBankFees}
 
 var cashKeywords = keywordRule{[]string{"bargeldauszahlung", "geldautomat", "auszahlung gaa", " gaa ", "bargeld", "cash"}, "bargeld"}
+
+// Municipalities and authorities: taxes, unless the remittance text names something else.
+var authorityKeywords = []keywordRule{
+	{[]string{"steuer"}, "steuern"},
+	{[]string{"kita", "kindergarten", "kindertagesst", "krippe", "hort ", "schule", "ganztag", "betreuung", "elternbeitrag",
+		"essensgeld", "verpflegung"}, "kita-schule"},
+	{[]string{"wasser", "abwasser", "kanal"}, "wasser"},
+}
 
 // Energy suppliers often deliver several utilities; the remittance text decides.
 var utilityKeywords = []keywordRule{

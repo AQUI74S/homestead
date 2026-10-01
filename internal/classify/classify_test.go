@@ -85,6 +85,10 @@ func TestClassify(t *testing.T) {
 		{"Overdraft interest", -823, "", "", "Sollzinsen 01.07.2026 - 30.09.2026", "", "kontofuehrung"},
 		{"Fee by bank code", -250, "", "", "Buchung 4711", "ACMT CHRG", "kontofuehrung"},
 		{"Salary payment is no fee", 341255, "Musterfirma GmbH", "", "Entgelt 09/2026", "", "gehalt"},
+		{"Kindergarten via municipality", -10600, "Gemeindekasse Musterdorf", "", "501407 KINDERGARTEN", "", "kita-schule"},
+		{"Property tax via municipality", -18000, "Gemeindekasse Musterdorf", "", "Grundsteuer B 2026 Kassenzeichen 4711", "", "steuern"},
+		{"Sewage via municipality", -9200, "Gemeindekasse Musterdorf", "", "Abwasser Abschlag 3/2026", "", "wasser"},
+		{"Municipality without hint", -4500, "Gemeindekasse Musterdorf", "", "Kassenzeichen 4711 Grundbesitzabgaben", "", "steuern"},
 		{"Insurance", -8733, "HUK-COBURG Allgemeine Versicherung AG", "", "Beitrag KFZ", "", "versicherung"},
 	}
 	for _, c := range cases {
