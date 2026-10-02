@@ -194,8 +194,9 @@ func TestHausverwaltungEndToEnd(t *testing.T) {
 	for _, l := range ov.Leases {
 		bal[l.ID] = l.Balance
 	}
-	// The current month may not be due/paid yet: check arrears relatively
-	if bal[anna] != 0 && bal[anna] != 100000 {
+	// The current month may not be due/paid yet: check arrears relatively.
+	// Anna pays on the 2nd, the rent is due on the 3rd: on the 2nd she is a month ahead.
+	if bal[anna] != 0 && bal[anna] != 100000 && bal[anna] != -100000 {
 		t.Errorf("Anna balance %d", bal[anna])
 	}
 	if d := bal[yil] - map[bool]int64{true: 125000, false: 0}[bal[yil] >= 125000+65000]; d != 65000 {

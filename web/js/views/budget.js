@@ -408,7 +408,18 @@ function forecastHTML(ov) {
 
 /** Recurring payments of the next 30 days, and per account the balance afterwards. */
 function upcomingHTML(ov) {
+  const f = ov.forecast;
   const items = [...(ov.upcoming || [])].sort((a, b) => a.date.localeCompare(b.date));
+  // In the running month the account boxes stop before the next salary: that is
+  // the lowest point of each account. Later payments belong to the next month.
+  const cut = f.current && f.until ? f.until : '';
+  const beforeCut = i => !cut || i.date < cut;
+  const cutAt = cut ? items.findIndex(i => !beforeCut(i)) : -1;
+  const salaryMode = ov.period.mode === PERIOD_SALARY;
+  const separator = `<div class="up-sep">Ab hier neuer Monat${when(
+    salaryMode && f.next_salary_on,
+    () => ` · Gehalt erwartet am ${dm(f.next_salary_on)}`,
+  )}</div>`;
   const accs = new Map(ov.accounts.map(a => [a.id, a]));
   const sum = (arr, f) => arr.filter(f).reduce((a, i) => a + i.amount, 0);
   const totalOut = -sum(items, i => i.amount < 0);
@@ -418,7 +429,7 @@ function upcomingHTML(ov) {
   const rows = items
     .slice(0, limit)
     .map(
-      i => `<div class="up-row"><span class="d">${dm(i.date)}</span>
+      (i, n) => `${when(n === cutAt, separator)}<div class="up-row"><span class="d">${dm(i.date)}</span>
     <span class="t"><b>${esc(i.label)}</b> <span>· ${esc(categoryName(i))}${when(i.manual, ' · manuell')}${when(
       i.status === 'ueberfaellig',
       ' · <span class="neg">überfällig</span>',
@@ -434,16 +445,20 @@ function upcomingHTML(ov) {
     if (!byAcc.has(k)) byAcc.set(k, []);
     byAcc.get(k).push(i);
   }
+  const lastDay = cut ? dayBefore(cut) : '';
+  const scope = !cut ? '' : salaryMode ? `bis ${dm(lastDay)}, vor dem Gehalt` : `bis ${dm(lastDay)}`;
   const accCards = [...byAcc.entries()]
-    .map(([id, list]) => {
+    .map(([id, all]) => {
+      const list = all.filter(beforeCut);
+      if (!list.length) return '';
       const a = accs.get(id);
       const out = -sum(list, i => i.amount < 0);
       const inn = sum(list, i => i.amount > 0);
       const after = a && a.balance != null ? a.balance + inn - out : null;
-      return `<div class="up-acc2"><b>${esc(accName(id))}</b>
+      return `<div class="up-acc2"><b>${esc(accName(id))}</b>${when(scope, () => `<span class="scope">${scope}</span>`)}
       <div class="row2"><span>Abbuchungen</span><span class="tnum">${E(-out)}</span></div>
       ${when(inn, `<div class="row2"><span>Eingänge</span><span class="tnum pos">${E(inn)}</span></div>`)}
-      ${when(after != null, `<div class="row2"><span>Kontostand danach</span><b class="tnum ${after < 0 ? 'neg' : ''}">${E(after)}</b></div>`)}</div>`;
+      ${when(after != null, `<div class="row2"><span>${cut ? 'Kontostand' : 'Kontostand danach'}</span><b class="tnum ${after < 0 ? 'neg' : ''}">${E(after)}</b></div>`)}</div>`;
     })
     .join('');
 
