@@ -85,3 +85,23 @@ func TestAutoLargeIncomeAroundMonthChange(t *testing.T) {
 		t.Errorf("August starts %s", s.Format("02.01."))
 	}
 }
+
+func TestAveragesPerAccount(t *testing.T) {
+	starts := []time.Time{day("2026-09-01"), day("2026-08-01"), day("2026-07-01"), day("2026-06-01")}
+	if n := monthsWithData(starts, day("2026-07-15")); n != 2 {
+		t.Errorf("months with data: %d, want 2 (September and August)", n)
+	}
+	if n := monthsWithData(starts, day("2025-01-01")); n != 4 {
+		t.Errorf("months with data: %d, want all 4", n)
+	}
+	// The salary account only has two months, the joint account four:
+	// the salary of 4,000 € a month must not be spread over four months.
+	parts := []accountSums{
+		{months: 2, sums: []store.CategorySum{{ID: 1, Group: "income", Cents: 800000}, {ID: 2, Group: "bills", Cents: -251400}}},
+		{months: 4, sums: []store.CategorySum{{ID: 3, Group: "income", Cents: 300000}, {ID: 2, Group: "bills", Cents: -40000}}},
+	}
+	avg, n := combineAverages(parts)
+	if n != 4 || avg[1] != 400000 || avg[3] != 75000 || avg[2] != 125700+10000 {
+		t.Errorf("averages %v over %d months", avg, n)
+	}
+}

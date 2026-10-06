@@ -1,10 +1,12 @@
 // Monthly budget: available amount, forecast, upcoming payments, budget vs. actual.
 import {
   BUDGET,
+  CONTRACT_GROUPS,
   DAY_MS,
   GROUPS,
   HERO_COLORS,
   KINDS,
+  LEDGER_ORDER,
   OUT_GROUPS,
   PERIOD_SALARY,
   TIMING,
@@ -52,45 +54,58 @@ async function viewBudget() {
   S.me.name_b = ov.name_b;
 
   const lines = ov.report.lines;
-  const sum = (g, f) => lines.filter(l => l.group === g).reduce((a, l) => a + l[f], 0);
-  const t = {};
-  for (const g of Object.keys(GROUPS)) t[g] = { budget: sum(g, 'budget'), ist: sum(g, 'ist') };
+  const t = groupTotals(lines);
   const outIst = OUT_GROUPS.reduce((a, g) => a + t[g].ist, 0);
-  const outBudget = OUT_GROUPS.reduce((a, g) => a + t[g].budget, 0);
-  const noBudgets = lines.every(l => l.budget === 0);
+  const outTarget = OUT_GROUPS.reduce((a, g) => a + t[g].target, 0);
+  const spending = lines.filter(l => l.group === 'expenses');
+  const noBudgets = spending.every(l => l.budget === 0);
   const avgN = ov.report.avg_periods || 0;
   // Budget doesn't match the average: no budget despite regular amounts, or a large deviation
   const offBudget = l =>
     avgN > 0 &&
-    l.group !== 'transfer' &&
     (l.budget === 0
       ? l.avg >= BUDGET.minAverageForBudget
       : Math.abs(l.budget - l.avg) > Math.max(l.avg * BUDGET.offShare, BUDGET.offMinCents));
-  const offLines = noBudgets ? [] : lines.filter(offBudget);
+  const offLines = noBudgets ? [] : spending.filter(offBudget);
 
   render(
     banners(ov, { noBudgets, avgN, offLines }).join('') +
       `<section class="grid3">
-        ${heroHTML(ov, t, outIst, outBudget)}
+        ${heroHTML(ov, t, outIst, outTarget)}
         ${forecastHTML(ov)}
       </section>
       <section class="grid3">
         <div class="span2">${upcomingHTML(ov)}</div>
-        <div class="card"><h3>Budget vs. Ist</h3><div class="gbars">${groupBars(t)}</div>
-          <div class="divider"></div><h3>Größte Posten</h3>
+        <div class="card"><h3>Größte Posten</h3>
           <div class="tops">${topCategories(lines, outIst) || '<span class="muted">Keine Ausgaben</span>'}</div></div>
       </section>
+      <section class="ledgers">${LEDGER_ORDER.map(g => ledgerHTML(g, lines, t, offLines, avgN)).join('')}</section>
       <div class="card"><div class="card-head"><h3>Letzte 12 Monate</h3><div class="legend2">
         <span><i style="background:var(--c-income)"></i>Einnahmen</span>
         <span><i style="background:var(--accent)"></i>Ausgaben gesamt</span></div></div>${trendBars(ov.trend)}</div>
-      <section class="ledgers">${['income', ...OUT_GROUPS].map(g => ledgerHTML(g, lines, t, offLines, avgN)).join('')}</section>
-      <p class="note">Budgets gelten für jeden Budgetmonat. Umbuchungen zwischen euren eigenen Konten zählen weder als
-        Einnahme noch als Ausgabe.${when(
+      <p class="note">Budgets planst du für die variablen Ausgaben, sie gelten für jeden Budgetmonat. Bei Einnahmen,
+        Fixkosten, Sparen und Schulden ist das Soll, was laut erkannten Verträgen in diesem Monat fällig ist: schon
+        gebucht plus noch offen bis zum Gehalt. Umbuchungen zwischen euren eigenen Konten zählen weder als Einnahme noch
+        als Ausgabe.${when(
           avgN > 0,
-          ` Ø = Monatsdurchschnitt der letzten ${avgN} Budgetmonate, Jahres- und Quartalszahlungen anteilig.
-          <button class="linkbtn" data-act="rebuild-budgets">Alle Budgets aus Ist neu berechnen</button>`,
+          ` Ø = Monatsdurchschnitt der letzten bis zu ${avgN} Budgetmonate (je Konto nur die Monate mit Umsätzen),
+          Jahres- und Quartalszahlungen anteilig.
+          <button class="linkbtn" data-act="rebuild-budgets">Budgets der Ausgaben aus Ist neu berechnen</button>`,
         )}</p>`,
   );
+}
+
+/** Soll of a line: expected from contracts, or the budget for variable spending. */
+const target = l => (CONTRACT_GROUPS.includes(l.group) ? l.expected : l.budget);
+
+/** Actual and Soll per group. */
+function groupTotals(lines) {
+  const t = {};
+  for (const g of Object.keys(GROUPS)) {
+    const of = lines.filter(l => l.group === g);
+    t[g] = { ist: of.reduce((a, l) => a + l.ist, 0), target: of.reduce((a, l) => a + target(l), 0) };
+  }
+  return t;
 }
 
 function banners(ov, { noBudgets, avgN, offLines }) {
@@ -180,10 +195,10 @@ function banners(ov, { noBudgets, avgN, offLines }) {
 }
 
 /** Hero card: available amount and how the income was used. */
-function heroHTML(ov, t, outIst, outBudget) {
+function heroHTML(ov, t, outIst, outTarget) {
   const f = ov.forecast;
   const result = t.income.ist - outIst; // month balance so far: income minus spending
-  const plan = t.income.budget - outBudget;
+  const plan = t.income.target - outTarget;
   const quote = t.income.ist > 0 ? Math.round((t.savings.ist / t.income.ist) * 100) : 0;
   const pct = t.income.ist > 0 ? Math.round((result / t.income.ist) * 100) : 0;
   const base = Math.max(t.income.ist, outIst, 1);
@@ -192,10 +207,17 @@ function heroHTML(ov, t, outIst, outBudget) {
       `<i style="width:${(Math.max(0, t[g].ist) / base) * 100}%;background:var(${HERO_COLORS[g]})" ` +
       `title="${GROUPS[g].label} ${E(t[g].ist)}"></i>`,
   ).join('');
-  const legend = OUT_GROUPS.map(
-    g =>
-      `<div><span><i style="background:var(${HERO_COLORS[g]})"></i>${GROUPS[g].label}</span><b>${E0(t[g].ist)}</b></div>`,
-  ).join('');
+  // Per group: actual of Soll (contracts) or budget (variable spending)
+  const legend = OUT_GROUPS.map(g => {
+    const { ist, target: soll } = t[g];
+    const over = soll > 0 && ist > soll;
+    const pct = soll > 0 ? Math.min(100, (Math.max(0, ist) / soll) * 100) : 0;
+    return `<div><span><i style="background:var(${HERO_COLORS[g]})"></i>${GROUPS[g].label}</span>
+      <b class="${over ? 'neg' : ''}">${E0(ist)}</b>${when(soll > 0, () => `<small>von ${E0(soll)}</small>`)}
+      <div class="mini" title="${GROUPS[g].label}: ${E(ist)} von ${E(soll)}"><i style="width:${pct}%;background:var(${
+        over ? '--bad' : HERO_COLORS[g]
+      })"></i></div></div>`;
+  }).join('');
   const lastDay = f.current && f.until ? dayBefore(f.until) : ov.period.end;
   const daysLeft = Math.max(0, Math.ceil((new Date(lastDay + 'T23:59:59') - Date.now()) / DAY_MS));
 
@@ -244,23 +266,6 @@ function balancesHTML(accounts) {
   )}</div><div class="hero-accts-grid">${items}</div></div>`;
 }
 
-/** Group totals as bars: actual with a marker for the budget. */
-function groupBars(t) {
-  return OUT_GROUPS.map(g => {
-    const b = t[g].budget;
-    const i = Math.max(0, t[g].ist);
-    const over = b > 0 && i > b;
-    const scale = Math.max(b, i, 1);
-    const title = b > 0 ? Math.round((i / b) * 100) + ' % des Budgets' : 'kein Budget';
-    return `<div class="gbar"><div class="h"><span>${GROUPS[g].label}</span>
-        <span class="${over ? 'neg' : ''}">${E0(i)} / ${E0(b)}</span></div>
-      <div class="track" title="${title}"><i style="width:${(i / scale) * 100}%;background:var(${over ? '--bad' : GROUPS[g].color})"></i>${when(
-        over,
-        `<span class="mark" style="left:${(b / scale) * 100}%"></span>`,
-      )}</div></div>`;
-  }).join('');
-}
-
 function topCategories(lines, outIst) {
   const exp = lines.filter(l => OUT_GROUPS.includes(l.group) && l.ist > 0).sort((a, b) => b.ist - a.ist);
   const max = exp[0]?.ist || 1;
@@ -290,39 +295,59 @@ function trendBars(trend) {
   return `<div class="tbars">${bars.join('')}</div>`;
 }
 
-/** Table of one group: budget input, actual and progress per category. */
+/**
+ * Table of one group. Variable spending: budget input, actual and progress.
+ * Contract groups: Soll from the contracts (booked plus still open), actual and progress.
+ */
 function ledgerHTML(g, lines, t, offLines, avgN) {
-  const rows = lines
-    .filter(l => l.group === g)
+  const contracts = CONTRACT_GROUPS.includes(g);
+  const all = lines.filter(l => l.group === g);
+  // contract groups only list categories with something booked or expected this month
+  const shown = contracts ? all.filter(l => l.ist || l.expected) : all;
+  const hidden = all.length - shown.length;
+  const rows = shown
     .map(l => {
-      const over = g !== 'income' && l.budget > 0 && l.ist > l.budget;
-      const pct = l.budget > 0 ? Math.min(100, (Math.max(0, l.ist) / l.budget) * 100) : 0;
+      const soll = target(l);
+      const over = g !== 'income' && soll > 0 && l.ist > soll;
+      const pct = soll > 0 ? Math.min(100, (Math.max(0, l.ist) / soll) * 100) : 0;
       const off = offLines.includes(l);
       const avgVal = Math.ceil(l.avg / BUDGET.roundCents) * BUDGET.roundCents;
-      const avgHint = !(avgN > 0 && l.avg > 0)
-        ? ''
-        : off
-          ? `<button class="avg-hint off" data-act="take-avg" data-cat="${l.id}" data-amount="${avgVal}" ` +
-            `title="Budget auf den Durchschnitt setzen">Ø ${E0(l.avg)} · übernehmen</button>`
-          : `<span class="avg-hint">Ø ${E0(l.avg)}</span>`;
+      const open = l.open_dates || [];
+      const hint = contracts
+        ? when(open.length, () => `<span class="avg-hint">offen ${open.map(dm).join(' · ')}</span>`) ||
+          when(avgN > 0 && l.avg > 0, () => `<span class="avg-hint">Ø ${E0(l.avg)}</span>`)
+        : !(avgN > 0 && l.avg > 0)
+          ? ''
+          : off
+            ? `<button class="avg-hint off" data-act="take-avg" data-cat="${l.id}" data-amount="${avgVal}" ` +
+              `title="Budget auf den Durchschnitt setzen">Ø ${E0(l.avg)} · übernehmen</button>`
+            : `<span class="avg-hint">Ø ${E0(l.avg)}</span>`;
       const ist = l.count
         ? `<button class="ist-link" data-act="show-category" data-cat="${l.id}">${E(l.ist)}</button>`
         : `<span class="muted">${E(0)}</span>`;
+      const plan = contracts
+        ? `<span class="tnum">${E(soll)}</span>`
+        : `<input class="num" inputmode="decimal" data-budget="${l.id}" value="${l.budget ? nf2.format(l.budget / 100) : ''}"
+          placeholder="0,00" aria-label="Budget ${esc(l.name)}">`;
       const bar = when(
-        l.budget > 0,
+        soll > 0,
         `<div class="bar thin"><i style="width:${pct}%;background:var(${over ? '--bad' : GROUPS[g].color})"></i></div>`,
       );
-      return `<tr class="${off ? 'off-budget' : ''}"><td><span class="cat-name">${esc(l.name)}</span>${avgHint}</td>
-        <td class="r"><input class="num" inputmode="decimal" data-budget="${l.id}" value="${l.budget ? nf2.format(l.budget / 100) : ''}"
-          placeholder="0,00" aria-label="Budget ${esc(l.name)}"></td>
+      return `<tr class="${off ? 'off-budget' : ''}"><td><span class="cat-name">${esc(l.name)}</span>${hint}</td>
+        <td class="r">${plan}</td>
         <td class="r ${over ? 'over' : ''}">${ist}</td>
         <td class="prog">${bar}</td></tr>`;
     })
     .join('');
+  const empty = `<tr><td colspan="4" class="muted">In diesem Monat ist hier nichts gebucht oder fällig.</td></tr>`;
   return `<section class="ledger" style="--gc:var(${GROUPS[g].color})"><header><h2>${GROUPS[g].label}</h2>
-      <span class="sum"><b>${E(t[g].ist)}</b> / ${E(t[g].budget)}</span></header>
-    <div class="tbl-scroll"><table><thead><tr><th>Kategorie</th><th class="r">Budget</th><th class="r">Ist</th><th></th></tr>
-      </thead><tbody>${rows}</tbody></table></div></section>`;
+      <span class="sum"><b>${E(t[g].ist)}</b> / ${E(t[g].target)}</span></header>
+    <div class="tbl-scroll"><table><thead><tr><th>Kategorie</th><th class="r">${contracts ? 'Soll' : 'Budget'}</th>
+      <th class="r">Ist</th><th></th></tr></thead><tbody>${rows || empty}</tbody></table></div>${when(
+        hidden,
+        () =>
+          `<p class="note ledger-note">${plural(hidden, 'Kategorie', 'Kategorien')} ohne Buchung oder Vertrag in diesem Monat ausgeblendet.</p>`,
+      )}</section>`;
 }
 
 /** Forecast until the end of the budget month. */

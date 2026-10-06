@@ -22,6 +22,9 @@ type CategoryLine struct {
 	Count         int          `json:"count"` // number of transactions
 	Overridden    bool         `json:"budget_overridden"`
 	AvgCents      int64        `json:"avg"` // monthly average over the last up to 12 budget months
+	// Set by the budget package for groups planned by contracts (not variable spending):
+	ExpectedCents int64    `json:"expected"`   // booked so far plus what the contracts still expect
+	OpenDates     []string `json:"open_dates"` // due dates of those open contract payments
 }
 
 // CategoryLines returns budget (with the override for month) and actuals in [start, end)
@@ -115,6 +118,38 @@ func (s *Store) CategorySums(ctx context.Context, from, to time.Time) ([]Categor
 		FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
 		WHERE `+sqlHousehold+` AND `+sqlNotTransfer+` AND t.booking_date >= $1 AND t.booking_date < $2
 		GROUP BY c.id, c.grp`, from, to)
+}
+
+// AccountCategorySums is CategorySums for a single account.
+func (s *Store) AccountCategorySums(ctx context.Context, accountID int64, from, to time.Time) ([]CategorySum, error) {
+	return queryAll(ctx, s.DB, func(sc scanner) (CategorySum, error) {
+		var c CategorySum
+		return c, sc.Scan(&c.ID, &c.Group, &c.Cents)
+	}, `SELECT c.id, c.grp, (sum(t.amount)*100)::bigint
+		FROM transactions t JOIN categories c ON c.id=t.category_id JOIN accounts a ON a.id=t.account_id
+		WHERE `+sqlHousehold+` AND `+sqlNotTransfer+` AND t.account_id=$1 AND t.booking_date >= $2 AND t.booking_date < $3
+		GROUP BY c.id, c.grp`, accountID, from, to)
+}
+
+// FirstBookingPerAccount returns the earliest booking date of each household account
+// that has transactions: how far back its data goes.
+func (s *Store) FirstBookingPerAccount(ctx context.Context) (map[int64]time.Time, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT t.account_id, min(t.booking_date) FROM transactions t JOIN accounts a ON a.id=t.account_id
+		WHERE `+sqlHousehold+` GROUP BY t.account_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]time.Time{}
+	for rows.Next() {
+		var id int64
+		var first time.Time
+		if err := rows.Scan(&id, &first); err != nil {
+			return nil, err
+		}
+		out[id] = first
+	}
+	return out, rows.Err()
 }
 
 // FirstHouseholdBooking returns the earliest booking date on household accounts

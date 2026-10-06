@@ -127,6 +127,7 @@ func LoadOverview(ctx context.Context, st *store.Store, month string) (*Overview
 		f.BudgetRest = 0
 	}
 	f.Items, f.OpenIn, f.OpenOut, f.OpenByKind = fc.Items, fc.OpenIn, fc.OpenOut, fc.OpenByKind
+	ov.Report.Lines = withExpected(ov.Report.Lines, fc.Items, f.Past)
 	f.Projected = f.IncomeIst + fc.OpenIn - f.OutIst - fc.OpenOut - f.BudgetRest
 
 	if f.Current {
@@ -134,6 +135,79 @@ func LoadOverview(ctx context.Context, st *store.Store, month string) (*Overview
 		f.CashProjected = f.Balance + fc.OpenIn - fc.OpenOut - f.BudgetRest
 	}
 	return ov, nil
+}
+
+// PlannedByContracts reports whether a group is planned from the recognized
+// contracts (expected amounts) rather than with a budget: everything except the
+// variable spending.
+func PlannedByContracts(g domain.Group) bool {
+	switch g {
+	case domain.GroupIncome, domain.GroupBills, domain.GroupSavings, domain.GroupDebts:
+		return true
+	}
+	return false
+}
+
+// unassignedLabel names the line for open contract payments without a category.
+const unassignedLabel = "Verträge ohne Kategorie"
+
+// withExpected sets the expected amount of each category line: what was booked
+// so far plus the contract payments still open in the forecast (none for a
+// past month). Open payments of contracts without a category are collected in
+// an extra line per group, so the group totals match the forecast.
+func withExpected(lines []store.CategoryLine, items []Item, past bool) []store.CategoryLine {
+	index := map[int64]int{}
+	for i := range lines {
+		lines[i].ExpectedCents = lines[i].IstCents
+		index[lines[i].ID] = i
+	}
+	if past {
+		return lines
+	}
+	unassigned := map[domain.Group]*store.CategoryLine{}
+	for _, it := range items {
+		if it.Status == ItemPaid {
+			continue
+		}
+		var l *store.CategoryLine
+		if it.CategoryID != nil {
+			if i, ok := index[*it.CategoryID]; ok {
+				l = &lines[i]
+			}
+		}
+		if l == nil {
+			g := kindGroup(it.Kind)
+			if unassigned[g] == nil {
+				unassigned[g] = &store.CategoryLine{Group: g, Name: unassignedLabel}
+			}
+			l = unassigned[g]
+		}
+		amount := it.Amount // signed, income positive
+		if l.Group != domain.GroupIncome {
+			amount = -amount
+		}
+		l.ExpectedCents += amount
+		l.OpenDates = append(l.OpenDates, it.Date)
+	}
+	for _, g := range []domain.Group{domain.GroupIncome, domain.GroupBills, domain.GroupSavings, domain.GroupDebts, domain.GroupExpenses} {
+		if u := unassigned[g]; u != nil {
+			lines = append(lines, *u)
+		}
+	}
+	return lines
+}
+
+// kindGroup is the group a contract without category counts in.
+func kindGroup(k domain.Kind) domain.Group {
+	switch k {
+	case domain.KindIncome:
+		return domain.GroupIncome
+	case domain.KindLoan:
+		return domain.GroupDebts
+	case domain.KindSavings:
+		return domain.GroupSavings
+	}
+	return domain.GroupBills
 }
 
 // forecastEnd returns where the forecast of a period stops (exclusive). The

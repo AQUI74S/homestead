@@ -15,7 +15,7 @@ var (
 	reDigits     = regexp.MustCompile(`\b[0-9][0-9./-]*\b`)
 	reSpaces     = regexp.MustCompile(`\s+`)
 	reEinkaufBei = regexp.MustCompile(`(?i)ihr einkauf bei\s+([^,/]+)`)
-	// Securities settlements carry a unique order number: "WP-ABRECHNUNG 0494152971001Kauf ISIN …"
+	// Securities settlements carry a unique order number: "WP-ABRECHNUNG 0400000000001Kauf ISIN …"
 	reWPAbrechnung = regexp.MustCompile(`(?i)^\s*(wp-?abrechnung|wertpapierabrechnung|wertpapier-abrechnung)\b`)
 	// Periodic account closings: "Saldo der Abschlussposten …", "Kontoabschluss 3. Quartal"
 	reAccountClosing = regexp.MustCompile(`(?i)abschlussposten|kontoabschluss|rechnungsabschluss`)

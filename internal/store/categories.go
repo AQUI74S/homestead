@@ -106,14 +106,15 @@ func (s *Store) SetBudget(ctx context.Context, categoryID int64, month string, c
 	return err
 }
 
-// ApplyDefaultBudgets sets the default budget of categories in a single transaction.
+// ApplyDefaultBudgets sets the default budget of the variable spending categories
+// (the only ones planned with a budget) in a single transaction.
 // want maps category ID to the new budget; keep decides per category (with its
 // current budget) whether to leave it alone. With clearFrom set, monthly overrides
 // from that month onward are removed. Returns the number of changed categories.
 func (s *Store) ApplyDefaultBudgets(ctx context.Context, want map[int64]int64, keep func(current, next int64) bool, clearFrom string) (int, error) {
 	changed := 0
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT id, (budget*100)::bigint FROM categories c WHERE `+sqlNotTransfer)
+		rows, err := tx.QueryContext(ctx, `SELECT id, (budget*100)::bigint FROM categories WHERE grp=$1`, domain.GroupExpenses)
 		if err != nil {
 			return err
 		}

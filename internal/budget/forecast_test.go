@@ -112,8 +112,8 @@ func TestLateBookingAcrossMonthEnd(t *testing.T) {
 	// Due on the 30th, but September's booking slipped to 1 October:
 	// the next due date is 30 October, not 30 November.
 	rec := []store.Recurring{
-		{ID: 1, Label: "Darlehen", Direction: "out", Kind: "kredit", CycleDays: 30, LastCents: 52417, FirstDate: "2026-05-30", LastDate: "2026-10-01"},
-		{ID: 2, Label: "Gehalt", Direction: "in", Kind: "einkommen", CycleDays: 30, LastCents: 462687, FirstDate: "2026-04-29", LastDate: "2026-10-01"},
+		{ID: 1, Label: "Darlehen", Direction: "out", Kind: "kredit", CycleDays: 30, LastCents: 50000, FirstDate: "2026-05-30", LastDate: "2026-10-01"},
+		{ID: 2, Label: "Gehalt", Direction: "in", Kind: "einkommen", CycleDays: 30, LastCents: 400000, FirstDate: "2026-04-29", LastDate: "2026-10-01"},
 	}
 	res := Compute(rec, day("2026-10-01"), day("2026-11-05"), day("2026-10-01"))
 	got := map[string]string{}

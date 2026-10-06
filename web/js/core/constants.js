@@ -13,6 +13,12 @@ export const GROUPS = {
 /** Groups that count as money going out. */
 export const OUT_GROUPS = ['bills', 'expenses', 'savings', 'debts'];
 
+/** Groups planned from the recognized contracts (Soll); variable spending has budgets. */
+export const CONTRACT_GROUPS = ['income', 'bills', 'savings', 'debts'];
+
+/** Order of the tables on the month page: the spending you control first. */
+export const LEDGER_ORDER = ['expenses', 'bills', 'debts', 'savings', 'income'];
+
 /** Colors of the spending stack on the dark hero card. */
 export const HERO_COLORS = {
   bills: '--h-bills',

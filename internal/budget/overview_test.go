@@ -28,7 +28,7 @@ func TestNextSalary(t *testing.T) {
 			FirstDate: "2026-05-29", LastDate: "2026-08-29"},
 		{ID: 2, Label: "Gehalt B", Direction: "in", Kind: "einkommen", CycleDays: 30, LastCents: 210000,
 			FirstDate: "2026-06-01", LastDate: "2026-09-01"},
-		{ID: 3, Label: "Kindergeld", Direction: "in", Kind: "einkommen", CycleDays: 30, LastCents: 77700,
+		{ID: 3, Label: "Kindergeld", Direction: "in", Kind: "einkommen", CycleDays: 30, LastCents: 75000,
 			LastDate: "2026-09-10"},
 	}
 	// September runs from 29.08.; salary A is late (expected 29.09., today 01.10.)
@@ -56,6 +56,38 @@ func TestForecastEnd(t *testing.T) {
 	for _, c := range cases {
 		if got := forecastEnd(end, c.next, c.current).Format("2006-01-02"); got != c.want {
 			t.Errorf("forecastEnd(%q, %v) = %s, want %s", c.next, c.current, got, c.want)
+		}
+	}
+}
+
+func TestWithExpected(t *testing.T) {
+	id := func(v int64) *int64 { return &v }
+	lines := []store.CategoryLine{
+		{ID: 1, Group: "bills", Name: "Miete / Hauskredit", IstCents: 0},
+		{ID: 2, Group: "bills", Name: "Gas & Heizung", IstCents: 20000},
+		{ID: 3, Group: "income", Name: "Kindergeld", IstCents: 0},
+	}
+	items := []Item{
+		{Label: "Deutsche Bank", CategoryID: id(1), Date: "2026-10-15", Amount: -80000, Status: ItemOpen},
+		{Label: "Commerzbank", CategoryID: id(1), Date: "2026-10-30", Amount: -50000, Status: ItemOpen},
+		{Label: "Vattenfall Gas", CategoryID: id(2), Date: "2026-10-01", Amount: -20000, Status: ItemPaid},
+		{Label: "Familienkasse", CategoryID: id(3), Date: "2026-10-10", Amount: 75000, Status: ItemOpen},
+		{Label: "Handwerker (manuell)", Kind: "fixkosten", Date: "2026-10-20", Amount: -9000, Status: ItemOpen},
+	}
+	got := withExpected(lines, items, false)
+	want := map[string]int64{"Miete / Hauskredit": 130000, "Gas & Heizung": 20000, "Kindergeld": 75000, unassignedLabel: 9000}
+	for _, l := range got {
+		if l.ExpectedCents != want[l.Name] {
+			t.Errorf("%s: expected %d, want %d", l.Name, l.ExpectedCents, want[l.Name])
+		}
+	}
+	if len(got) != 4 || got[0].OpenDates[1] != "2026-10-30" || got[3].Group != "bills" {
+		t.Errorf("lines: %+v", got)
+	}
+	// a past month expects nothing more than was booked
+	for _, l := range withExpected([]store.CategoryLine{{ID: 1, Group: "bills", IstCents: 500}}, items, true) {
+		if l.ExpectedCents != 500 || l.OpenDates != nil {
+			t.Errorf("past month: %+v", l)
 		}
 	}
 }

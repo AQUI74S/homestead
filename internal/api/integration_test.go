@@ -212,6 +212,7 @@ func TestDemoEndToEnd(t *testing.T) {
 	var cur struct {
 		Accounts []store.Account      `json:"accounts"`
 		Forecast budget.MonthForecast `json:"forecast"`
+		Report   budget.MonthReport   `json:"report"`
 	}
 	do("GET", "/api/overview", "", &cur)
 	cf := cur.Forecast
@@ -224,6 +225,25 @@ func TestDemoEndToEnd(t *testing.T) {
 	}
 	if cf.NextSalary <= 0 || cf.NextSalaryOn == "" {
 		t.Errorf("next salary unknown: %d %q", cf.NextSalary, cf.NextSalaryOn)
+	}
+	// Soll of the categories: what is still expected adds up to the open amounts of the forecast
+	var expIn, expOut int64
+	var miete int64
+	for _, l := range cur.Report.Lines {
+		if l.Group == "income" {
+			expIn += l.ExpectedCents - l.IstCents
+		} else {
+			expOut += l.ExpectedCents - l.IstCents
+		}
+		if l.Slug == "wohnen" {
+			miete = l.ExpectedCents
+		}
+	}
+	if expIn != cf.OpenIn || expOut != cf.OpenOut {
+		t.Errorf("expected per category %d/%d, forecast open %d/%d", expIn, expOut, cf.OpenIn, cf.OpenOut)
+	}
+	if miete != 125000 {
+		t.Errorf("Soll rent: %d, want 1.250 € a month", miete)
 	}
 
 	// Recategorize with a rule: all Lieferando transactions to "Freizeit"

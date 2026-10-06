@@ -2,6 +2,7 @@ package budget
 
 import (
 	"context"
+	"math"
 	"sort"
 	"time"
 
@@ -105,46 +106,93 @@ func Trend(ctx context.Context, st *store.Store, p *Periods, month string, n int
 }
 
 // Averages returns the monthly average per category (cents, expenses and income positive)
-// over the last up to averageMonths full budget months – only as many as there is data for.
+// over the last up to averageMonths full budget months.
+//
+// Each account only counts the months it has data for: an account whose
+// transactions go back six months is averaged over six months, not over the
+// twelve of an older account (months without data would count as nothing spent
+// or earned). The second result is the longest window used.
 func Averages(ctx context.Context, st *store.Store, p *Periods, today time.Time) (map[int64]int64, int, error) {
 	cur, _ := time.Parse(domain.MonthLayout, p.Current(today))
 	end, _, err := p.Range(cur.Format(domain.MonthLayout))
 	if err != nil {
 		return nil, 0, err
 	}
-	out := map[int64]int64{}
-	first, ok, err := st.FirstHouseholdBooking(ctx)
-	if err != nil || !ok {
-		return out, 0, err
-	}
-	n, start := 0, end
+	// starts[k] is the start of the (k+1)-th full budget month before the current one
+	var starts []time.Time
 	for k := 1; k <= averageMonths; k++ {
 		s, _, err := p.Range(cur.AddDate(0, -k, 0).Format(domain.MonthLayout))
-		if err != nil || s.Before(first) {
+		if err != nil {
 			break
 		}
-		n, start = k, s
+		starts = append(starts, s)
 	}
-	if n == 0 {
-		return out, 0, nil
-	}
-	sums, err := st.CategorySums(ctx, start, end)
+	firsts, err := st.FirstBookingPerAccount(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
-	for _, c := range sums {
-		sum := c.Cents
-		if c.Group != domain.GroupIncome {
-			sum = -sum
+	var parts []accountSums
+	for acc, first := range firsts {
+		n := monthsWithData(starts, first)
+		if n == 0 {
+			continue
 		}
-		if sum > 0 {
-			out[c.ID] = sum / int64(n)
+		sums, err := st.AccountCategorySums(ctx, acc, starts[n-1], end)
+		if err != nil {
+			return nil, 0, err
 		}
+		parts = append(parts, accountSums{months: n, sums: sums})
 	}
-	return out, n, nil
+	avg, n := combineAverages(parts)
+	return avg, n, nil
 }
 
-// SuggestBudgets sets budgets to the average rounded up to full 10 € (see Averages).
+// accountSums are the category sums of one account over its months with data.
+type accountSums struct {
+	months int
+	sums   []store.CategorySum
+}
+
+// monthsWithData counts the budget months (starts, newest first) that lie
+// completely after the first booking of an account.
+func monthsWithData(starts []time.Time, first time.Time) int {
+	n := 0
+	for _, s := range starts {
+		if s.Before(first) {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// combineAverages adds up the monthly averages of the accounts per category
+// (expenses and income positive, categories with a negative total left out)
+// and returns them with the longest window.
+func combineAverages(parts []accountSums) (map[int64]int64, int) {
+	total := map[int64]float64{}
+	longest := 0
+	for _, a := range parts {
+		longest = max(longest, a.months)
+		for _, c := range a.sums {
+			v := float64(c.Cents)
+			if c.Group != domain.GroupIncome {
+				v = -v
+			}
+			total[c.ID] += v / float64(a.months)
+		}
+	}
+	out := map[int64]int64{}
+	for id, v := range total {
+		if v > 0 {
+			out[id] = int64(math.Round(v))
+		}
+	}
+	return out, longest
+}
+
+// SuggestBudgets sets the budgets of the variable spending to the average rounded
+// up to full 10 € (see Averages); the other groups are planned from contracts.
 // Without overwrite, only where no budget is set yet. With overwrite, all budgets are
 // recalculated (even to 0) and monthly overrides from the current budget month onward
 // are removed. Returns the number of changed budgets and of months averaged.
