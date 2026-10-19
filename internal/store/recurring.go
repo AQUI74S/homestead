@@ -35,6 +35,7 @@ type Recurring struct {
 	Ended        bool                   `json:"ended"`
 	Manual       bool                   `json:"manual"`
 	AccountID    *int64                 `json:"account_id"`
+	Note         string                 `json:"note"` // why it no longer counts (set by the budget package)
 }
 
 // Active reports whether the series is still expected to be paid.

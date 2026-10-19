@@ -381,6 +381,33 @@ func TestDemoEndToEnd(t *testing.T) {
 		t.Errorf("next due date from last payment: %s, expected %s", nextDate, want)
 	}
 	do("DELETE", "/api/recurring/"+itoa(created2.ID), "", nil)
+
+	// A contract created by hand for a payment that is already detected counts once
+	var dup struct{ ID int64 }
+	nextLoan := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
+	do("POST", "/api/recurring", `{"label":"Santander Consumer Bank AG","amount":28900,"cycle_days":30,"next_date":"`+nextLoan+`","kind":"kredit"}`, &dup)
+	var withDup struct {
+		Upcoming []budget.Item `json:"upcoming"`
+	}
+	do("GET", "/api/overview", "", &withDup)
+	loans := 0
+	for _, it := range withDup.Upcoming {
+		if it.Label == "Santander Consumer Bank AG" {
+			loans++
+		}
+	}
+	var recs []store.Recurring
+	do("GET", "/api/recurring", "", &recs)
+	dupNote := ""
+	for _, r := range recs {
+		if r.ID == dup.ID && r.Ended {
+			dupNote = r.Note
+		}
+	}
+	if loans != 1 || dupNote == "" {
+		t.Errorf("duplicate contract: loan upcoming %d times, note of the manual one %q", loans, dupNote)
+	}
+	do("DELETE", "/api/recurring/"+itoa(dup.ID), "", nil)
 	if code := do("DELETE", "/api/recurring/"+itoa(created.ID), "", nil); code != 200 {
 		t.Errorf("delete contract: %d", code)
 	}

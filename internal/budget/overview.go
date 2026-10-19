@@ -2,6 +2,7 @@ package budget
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/AQUI74S/homestead/internal/domain"
@@ -305,5 +306,76 @@ func HouseholdRecurring(ctx context.Context, st *store.Store) ([]store.Account, 
 		x.MonthlyCents = x.CycleDays.MonthlyCents(x.AvgCents)
 		out = append(out, x)
 	}
+	retire(out, domain.Today())
 	return household, out, nil
 }
+
+const (
+	// staleMissed due dates without a payment end a detected contract. Detection
+	// notices that by itself, but not for a contract that was confirmed and is
+	// no longer found under its old name.
+	staleMissed    = 2
+	staleGraceDays = 7
+	// Amounts within 1 % (at least 1 €) count as the same payment.
+	samePaymentShare    = 0.01
+	samePaymentMinCents = 100
+
+	noteStale     = "zwei Fälligkeiten ohne Zahlung"
+	noteDuplicate = "doppelt: gerechnet wird der zuletzt gebuchte Eintrag"
+)
+
+// retire marks contracts that must no longer be forecast as ended: detected
+// payments that missed their last due dates, and duplicates of the same
+// payment (a contract created by hand from a transaction, or an earlier
+// detection under another name). Of duplicates the one paid most recently
+// stays, a detected one before one created by hand.
+func retire(rec []store.Recurring, today time.Time) {
+	for i := range rec {
+		r := &rec[i]
+		if r.Ended || r.Manual || r.CycleDays <= 0 {
+			continue
+		}
+		if last := domain.ParseDate(r.LastDate); !last.IsZero() &&
+			today.After(r.CycleDays.Step(last, staleMissed).AddDate(0, 0, staleGraceDays)) {
+			r.Ended, r.Note = true, noteStale
+		}
+	}
+	counts := func(r store.Recurring) bool { return !r.Ended && r.Status != domain.StatusIgnored }
+	for i := range rec {
+		if !counts(rec[i]) {
+			continue
+		}
+		for j := range rec {
+			if i != j && counts(rec[j]) && samePayment(rec[i], rec[j]) && preferred(rec[j], rec[i]) {
+				rec[i].Ended, rec[i].Note = true, noteDuplicate
+				break
+			}
+		}
+	}
+}
+
+// samePayment reports whether two contracts describe the same payment.
+func samePayment(a, b store.Recurring) bool {
+	if a.Direction != b.Direction || a.CycleDays != b.CycleDays || normLabel(a.Label) != normLabel(b.Label) {
+		return false
+	}
+	diff := a.LastCents - b.LastCents
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= max(samePaymentMinCents, int64(float64(max(a.LastCents, b.LastCents))*samePaymentShare))
+}
+
+// preferred orders duplicates: most recent payment, then detected before
+// manual, then the newer entry.
+func preferred(a, b store.Recurring) bool {
+	if a.LastDate != b.LastDate {
+		return a.LastDate > b.LastDate
+	}
+	if a.Manual != b.Manual {
+		return !a.Manual
+	}
+	return a.ID > b.ID
+}
+
+func normLabel(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }

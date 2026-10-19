@@ -91,3 +91,36 @@ func TestWithExpected(t *testing.T) {
 		}
 	}
 }
+
+func TestRetire(t *testing.T) {
+	rec := []store.Recurring{
+		// the same loan three times: detected, created by hand from a transaction,
+		// and an earlier detection (confirmed) that is no longer found under its old name
+		{ID: 1, Label: "Commerzbank AG", Direction: "out", CycleDays: 30, LastCents: 50000, LastDate: "2026-09-30", Status: "detected"},
+		{ID: 2, Label: "Commerzbank AG", Direction: "out", CycleDays: 30, LastCents: 50000, LastDate: "2026-09-30", Manual: true},
+		{ID: 3, Label: "COMMERZBANK  AG", Direction: "out", CycleDays: 30, LastCents: 50000, LastDate: "2026-08-31", Status: "confirmed"},
+		// same name, different amount: a different payment
+		{ID: 4, Label: "Commerzbank AG", Direction: "out", CycleDays: 30, LastCents: 1290, LastDate: "2026-09-30"},
+		// confirmed, but nothing paid for months: over
+		{ID: 5, Label: "Altes Abo", Direction: "out", CycleDays: 30, LastCents: 999, LastDate: "2026-06-05", Status: "confirmed"},
+		// created by hand for later: never stale
+		{ID: 6, Label: "Kfz-Steuer", Direction: "out", CycleDays: 365, LastCents: 14200, LastDate: "2025-11-01", Manual: true},
+	}
+	retire(rec, day("2026-10-19"))
+	want := map[int64]string{1: "", 2: noteDuplicate, 3: noteDuplicate, 4: "", 5: noteStale, 6: ""}
+	for _, r := range rec {
+		if r.Note != want[r.ID] || r.Ended != (want[r.ID] != "") {
+			t.Errorf("%d %s: ended=%v note=%q, want %q", r.ID, r.Label, r.Ended, r.Note, want[r.ID])
+		}
+	}
+	// what is left is forecast once
+	n := 0
+	for _, it := range Upcoming(rec, day("2026-10-19"), day("2026-11-19")) {
+		if it.Label == "Commerzbank AG" && it.Amount == -50000 {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("loan forecast %d times, want once", n)
+	}
+}

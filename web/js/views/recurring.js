@@ -45,7 +45,7 @@ function rowHTML(r) {
     ? `<button class="icon-btn" data-act="del-contract" data-id="${r.id}" title="Vertrag löschen">🗑</button>`
     : `<button class="icon-btn" data-act="rec-tx" data-id="${r.id}" title="Zahlungen ansehen">≡</button>`;
   return `<tr class="${r.status === 'ignored' ? 'ignored' : ''} ${r.ended ? 'ended' : ''}">
-      <td><b>${esc(r.label)}</b><br><span class="muted small">${cat}${origin}</span></td>
+      <td><b>${esc(r.label)}</b><br><span class="muted small">${cat}${origin}${when(r.note, () => ` · ${esc(r.note)}`)}</span></td>
       <td><span class="cycle c${r.cycle_days}">${esc(r.cycle)}</span></td>
       <td class="r tnum">${E(r.amount)}</td>
       <td class="r tnum"><b>${E(r.monthly)}</b></td>
@@ -134,7 +134,7 @@ async function viewRecurring() {
     ${when(
       ended.length,
       `<section class="ledger"><details class="ended">
-      <summary>Beendet (${ended.length}): keine Zahlung mehr im erwarteten Rhythmus</summary>
+      <summary>Beendet (${ended.length}): keine Zahlung mehr im erwarteten Rhythmus oder doppelt erfasst</summary>
       <div class="tbl-scroll"><table>${tableHead('Letzte')}<tbody>${ended.map(rowHTML).join('')}</tbody></table></div>
       </details></section>`,
     )}
