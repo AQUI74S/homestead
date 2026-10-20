@@ -46,8 +46,8 @@ async function viewCouple() {
     <section class="paar-grid">
       <div class="card"><h3>Einkommensverhältnis ${monthLabel(S.month)}</h3>
         <div class="share-bar">
-          <div style="flex:${shareA || MIN_FLEX};background:var(--c-income)">${nA} ${Math.round(shareA * 100)} %</div>
-          <div style="flex:${shareB || MIN_FLEX};background:var(--c-expenses)">${nB} ${Math.round(shareB * 100)} %</div></div>
+          <div class="a" style="flex:${shareA || MIN_FLEX}">${nA} ${Math.round(shareA * 100)} %</div>
+          <div class="b" style="flex:${shareB || MIN_FLEX}">${nB} ${Math.round(shareB * 100)} %</div></div>
         <table><tbody>
           <tr><td>Einnahmen ${nA}</td><td class="r tnum">${E(A)}</td></tr>
           <tr><td>Einnahmen ${nB}</td><td class="r tnum">${E(B)}</td></tr>

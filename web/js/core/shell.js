@@ -207,6 +207,7 @@ async function updateSyncState() {
       (problems ? ` · ${plural(problems, 'Problem', 'Probleme')}` : '');
     el.classList.toggle('running', !!s.running);
     el.classList.toggle('problem', problems > 0);
+    $('.sync-btn')?.classList.toggle('running', !!s.running); // the button turns while its sync runs
     return s;
   } catch {
     return null;

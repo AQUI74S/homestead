@@ -116,8 +116,9 @@ export const BUDGET = {
   offMinCents: 5000,
   // Averages are suggested rounded up to full 10 €.
   roundCents: 1000,
-  // Upcoming payments shown before "show all".
-  upcomingLimit: 10,
+  // Upcoming payments shown before "show all"; the block is capped so it ends
+  // level with the two cards beside it.
+  upcomingLimit: 6,
   // Paid recurring payments listed on a closed month.
   paidLimit: 8,
   // Warn this many days before a bank consent expires.

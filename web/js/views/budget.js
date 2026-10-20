@@ -76,13 +76,15 @@ async function viewBudget() {
       </section>
       <section class="grid3">
         <div class="span2">${upcomingHTML(ov)}</div>
-        <div class="card"><h3>Größte Posten</h3>
-          <div class="tops">${topCategories(lines, outIst) || '<span class="muted">Keine Ausgaben</span>'}</div></div>
+        <div class="col">
+          <div class="card"><h3>Größte Posten</h3>
+            <div class="tops">${topCategories(lines, outIst) || '<span class="muted">Keine Ausgaben</span>'}</div></div>
+          <div class="card"><div class="card-head"><h3>Letzte 12 Monate</h3><div class="legend2">
+            <span><i style="background:var(--c-income)"></i>Einnahmen</span>
+            <span><i style="background:var(--accent)"></i>Ausgaben</span></div></div>${trendBars(ov.trend)}</div>
+        </div>
       </section>
       <section class="ledgers">${LEDGER_ORDER.map(g => ledgerHTML(g, lines, t, offLines, avgN)).join('')}</section>
-      <div class="card"><div class="card-head"><h3>Letzte 12 Monate</h3><div class="legend2">
-        <span><i style="background:var(--c-income)"></i>Einnahmen</span>
-        <span><i style="background:var(--accent)"></i>Ausgaben gesamt</span></div></div>${trendBars(ov.trend)}</div>
       <p class="note">Budgets planst du für die variablen Ausgaben, sie gelten für jeden Budgetmonat. Bei Einnahmen,
         Fixkosten, Sparen und Schulden ist das Soll, was laut erkannten Verträgen in diesem Monat fällig ist: schon
         gebucht plus noch offen bis zum Gehalt. Umbuchungen zwischen euren eigenen Konten zählen weder als Einnahme noch

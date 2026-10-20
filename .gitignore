@@ -13,3 +13,6 @@ secrets/
 .vscode/
 .DS_Store
 ._*
+
+# design review scratch output (screenshots, reports from the design-taste-frontend skill)
+.taste-skill/

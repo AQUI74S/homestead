@@ -1,7 +1,7 @@
 // Subscriptions & fixed costs: detected recurring payments and contracts added by hand.
 import { CYCLES, CYCLE_MONTHS, DEFAULT_CYCLE, KINDS, TIMING } from '../core/constants.js';
 import { E, E0, amountInput, dmy, esc, parseDE } from '../core/format.js';
-import { $, confirmed, options, render, scrollToTop, toast, when } from '../core/dom.js';
+import { $, confirmed, options, render, scrollToTop, svg, toast, when } from '../core/dom.js';
 import { api, get } from '../core/api.js';
 import { S, accountName, catById, emptyTxFilter } from '../core/state.js';
 import { onChange, onClick, onSubmit } from '../core/actions.js';
@@ -10,6 +10,12 @@ import { categoryOptions } from './transactions.js';
 
 /** Bounds the catch-up loop of nextDue (520 weeks = 10 years). */
 const MAX_CATCH_UP = 520;
+
+/** Row icons: one outline set, no emoji. */
+const I_CONFIRM = svg('<path d="M4 12.5l5 5L20 7"/>');
+const I_IGNORE = svg('<path d="M6 6l12 12M18 6L6 18"/>');
+const I_DELETE = svg('<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>');
+const I_PAYMENTS = svg('<path d="M4 7h16M4 12h16M4 17h10"/>');
 
 /** The next due date on or after today, starting from a past payment. */
 function nextDue(dateStr, cycle) {
@@ -42,8 +48,8 @@ function rowHTML(r) {
     `<button class="icon-btn ${r.status === status ? 'on' : ''}" data-act="rec-status" data-status="${status}" ` +
     `data-cur="${r.status}" data-id="${r.id}" title="${title}">${label}</button>`;
   const extra = r.manual
-    ? `<button class="icon-btn" data-act="del-contract" data-id="${r.id}" title="Vertrag löschen">🗑</button>`
-    : `<button class="icon-btn" data-act="rec-tx" data-id="${r.id}" title="Zahlungen ansehen">≡</button>`;
+    ? `<button class="icon-btn" data-act="del-contract" data-id="${r.id}" title="Vertrag löschen">${I_DELETE}</button>`
+    : `<button class="icon-btn" data-act="rec-tx" data-id="${r.id}" title="Zahlungen ansehen">${I_PAYMENTS}</button>`;
   return `<tr class="${r.status === 'ignored' ? 'ignored' : ''} ${r.ended ? 'ended' : ''}">
       <td><b>${esc(r.label)}</b><br><span class="muted small">${cat}${origin}${when(r.note, () => ` · ${esc(r.note)}`)}</span></td>
       <td><span class="cycle c${r.cycle_days}">${esc(r.cycle)}</span></td>
@@ -52,8 +58,8 @@ function rowHTML(r) {
       <td class="tnum">${r.ended ? `<span class="muted">zuletzt ${dmy(r.last_date)}</span>` : dmy(r.next_date)}</td>
       <td><select class="inline" data-kind="${r.id}" aria-label="Art">${kindOptions(r.kind)}</select></td>
       <td><div class="state-btns">
-        ${stateButton('confirmed', '✓', 'Bestätigen')}
-        ${stateButton('ignored', '✕', 'Ignorieren (zählt nicht in Summen)')}
+        ${stateButton('confirmed', I_CONFIRM, 'Bestätigen')}
+        ${stateButton('ignored', I_IGNORE, 'Ignorieren (zählt nicht in Summen)')}
         ${extra}</div></td></tr>`;
 }
 
@@ -116,11 +122,11 @@ async function viewRecurring() {
         <button class="btn small" data-act="toggle-contract">${S.showContract ? 'Schließen' : 'Hinzufügen'}</button></div>
       <p class="note" style="margin-top:6px">Für Zahlungen, die im Abruf noch fehlen, z. B. jährliche Versicherungen oder
         halbjährliche Beiträge. Als Datum reicht die letzte Abbuchung, den nächsten Termin rechnet die App aus. Am schnellsten
-        geht es über „↻ Als Vertrag“ direkt in der Umsatzliste.</p>
+        geht es über „Als Vertrag“ direkt in der Umsatzliste.</p>
       ${when(S.showContract, contractFormHTML())}
     </section>
-    <p class="note" style="margin:0">Erkannt anhand von Rhythmus und Betrag über die letzten zwei Jahre. Mit ✓ bestätigst du
-      eine Zahlung, mit ✕ blendest du sie aus. Die Art lässt sich per Auswahl ändern und bleibt dann fest.</p>
+    <p class="note" style="margin:0">Erkannt anhand von Rhythmus und Betrag über die letzten zwei Jahre. Mit dem Haken bestätigst du
+      eine Zahlung, mit dem Kreuz blendest du sie aus. Die Art lässt sich per Auswahl ändern und bleibt dann fest.</p>
     ${tableHTML(ofKind('abo'), 'Abos', '--c-expenses', 'im Jahr ' + E0(abo * 12))}
     ${tableHTML(ofKind('fixkosten'), 'Fixkosten', '--c-bills')}
     ${tableHTML(ofKind('kredit'), 'Kredite', '--c-debts')}

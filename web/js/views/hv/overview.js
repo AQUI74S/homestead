@@ -7,12 +7,10 @@ import { onClick } from '../../core/actions.js';
 import { registerView } from '../../core/shell.js';
 import { costTypeName, loadMeta, loadReport, pill } from './common.js';
 
-/** Deadlines shown on the overview. */
-const DEADLINE_LIMIT = 7;
+/** Deadlines shown on the overview; the rest are on the Fristen page. */
+const DEADLINE_LIMIT = 3;
 /** Largest cost types shown per property. */
 const COST_LIMIT = 4;
-
-const TONE = { bezahlt: 'ok', teilweise: 'warn', offen: 'bad' };
 
 async function viewOverview() {
   await loadMeta(true);
@@ -40,7 +38,7 @@ async function viewOverview() {
       const r = l.row;
       const balance = l.balance > 0 ? 'Rückstand' : l.balance < 0 ? 'Guthaben' : 'ausgeglichen';
       return `<tr data-act="open-lease" data-id="${l.id}" class="clickable">
-      <td><div class="who"><span class="avatar ${TONE[r?.status] || ''}" aria-hidden="true">${esc(initials(l.tenant.name))}</span>
+      <td><div class="who"><span class="avatar" aria-hidden="true">${esc(initials(l.tenant.name))}</span>
         <div><b>${esc(l.tenant.name)}</b><br><span class="muted small">${esc(l.property_name)} · ${esc(l.unit_name)}</span></div></div></td>
       <td class="r tnum">${r ? E(r.soll) : '–'}</td><td class="r tnum">${r ? E(r.paid) : '–'}</td>
       <td>${r ? pill(r.status) : '<span class="muted small">kein Soll</span>'}${when(
@@ -78,13 +76,15 @@ async function viewOverview() {
       <a class="btn" href="#hv-umsaetze" data-act="hv-open-tx">Zuordnen</a></div>`,
     )}
     <section class="kpi4">
+      <div class="tile lead"><span class="l">Eingegangen ${monthLabel(HV.month)}</span>
+        <span class="n tnum">${E0(t.paid)}</span>
+        <span class="track"><i style="width:${paidPct}%;background:var(--accent)"></i></span>
+        <span class="s">${Math.round(paidPct)} % von ${E0(t.soll)} Soll</span></div>
       <div class="tile"><span class="l">Soll ${monthLabel(HV.month)}</span><span class="n tnum">${E0(t.soll)}</span>
         <span class="s">Kaltmiete + NK aller Verträge</span></div>
-      <div class="tile"><span class="l">Eingegangen</span><span class="n tnum pos">${E0(t.paid)}</span>
-        <span class="track"><i style="width:${paidPct}%;background:var(--good)"></i></span></div>
-      <div class="tile"><span class="l">Offen in diesem Monat</span><span class="n tnum ${t.open ? 'neg' : ''}">${E0(t.open)}</span>
+      <div class="tile"><span class="l">Offen in diesem Monat</span><span class="n tnum">${E0(t.open)}</span>
         <span class="s">inkl. noch nicht fälliger Mieten</span></div>
-      <div class="tile dark"><span class="l">Rückstände gesamt</span><span class="n tnum ${t.arrears ? 'neg' : ''}">${E0(t.arrears)}</span>
+      <div class="tile"><span class="l">Rückstände gesamt</span><span class="n tnum ${t.arrears ? 'neg' : ''}">${E0(t.arrears)}</span>
         <span class="s">über alle Mieter und Monate</span></div>
     </section>
     <section class="grid3">

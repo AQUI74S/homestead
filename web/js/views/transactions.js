@@ -1,11 +1,18 @@
 // Transactions: filter, re-categorize, confirm, create rules, turn into a contract.
 import { CATCH_ALL_SLUGS, GROUPS, LIMITS, SOURCE_LABELS, TIMING, UNCATEGORIZED } from '../core/constants.js';
 import { E, dmy, esc, monthLabel } from '../core/format.js';
-import { $, options, render, toast, when } from '../core/dom.js';
+import { $, options, render, svg, toast, when } from '../core/dom.js';
 import { api, get, query } from '../core/api.js';
 import { S, accountName, catById, currentMonth, nameOf } from '../core/state.js';
 import { onChange, onClick } from '../core/actions.js';
 import { registerView, route } from '../core/shell.js';
+
+/** Row icons: one outline set, no emoji. */
+const I_RECURRING = svg(
+  '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
+);
+const I_CONFIRM = svg('<path d="M4 12.5l5 5L20 7"/>');
+const I_RESET = svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>');
 
 /** Category <option>s grouped by area; withAll adds "Alle Kategorien". */
 export function categoryOptions(selected, withAll) {
@@ -89,20 +96,20 @@ async function loadTransactions() {
   const out = counted.filter(t => t.amount < 0).reduce((a, t) => a + t.amount, 0);
   $('#txSum').innerHTML = `${txs.length} Umsätze · <span class="pos">${E(inn)}</span> / <b>${E(out)}</b>`;
   $('#txTable').innerHTML = txs.length
-    ? `<table><thead><tr><th>Datum</th><th>Empfänger / Zweck</th><th>Konto</th><th>Kategorie</th><th class="r">Betrag</th></tr></thead>
+    ? `<table><thead><tr><th>Datum</th><th>Empfänger / Zweck</th><th>Konto</th><th>Kategorie</th><th></th><th class="r">Betrag</th></tr></thead>
       <tbody>${txs.map(rowHTML).join('')}</tbody></table>`
     : '<div class="empty">Keine Umsätze für diese Auswahl.</div>';
 }
 
 function rowHTML(t) {
   const recurring = t.recurring_id
-    ? ' <span class="src" title="Wiederkehrende Zahlung">↻</span>'
-    : ` <button class="btn ghost small" data-act="as-contract" data-tx="${t.id}" title="Als wiederkehrenden Vertrag anlegen">↻ Als Vertrag</button>`;
+    ? `<span class="pill" title="Wiederkehrende Zahlung">${I_RECURRING}Vertrag</span>`
+    : `<button class="btn ghost small" data-act="as-contract" data-tx="${t.id}" title="Als wiederkehrenden Vertrag anlegen">${I_RECURRING}Als Vertrag</button>`;
   const unconfirmed = t.source === 'auto' && CATCH_ALL_SLUGS.includes(t.category_slug);
   const confirm = when(
     unconfirmed,
     ` <button class="btn small" data-act="confirm-cat" data-tx="${t.id}" data-cat="${t.category_id}" ` +
-      `title="Kategorie stimmt – nicht mehr als „nicht zugeordnet“ zählen">✓ Passt so</button>`,
+      `title="Kategorie stimmt – nicht mehr als „nicht zugeordnet“ zählen">${I_CONFIRM}Passt so</button>`,
   );
   const badge = when(
     SOURCE_LABELS[t.source],
@@ -110,7 +117,7 @@ function rowHTML(t) {
   );
   const manual = when(
     t.source === 'manual',
-    ` <button class="btn ghost small" data-act="reset-tx" data-tx="${t.id}" title="Wieder automatisch zuordnen">↺</button>` +
+    ` <button class="btn ghost small" data-act="reset-tx" data-tx="${t.id}" title="Wieder automatisch zuordnen">${I_RESET}</button>` +
       when(
         t.merchant,
         `<br><button class="btn small" style="margin-top:4px" data-act="rule" data-tx="${t.id}" ` +
@@ -119,12 +126,13 @@ function rowHTML(t) {
   );
   return `<tr data-merchant="${esc(t.merchant)}">
       <td class="tnum">${dmy(t.date)}</td>
-      <td><div class="tx-main"><b>${esc(t.merchant || t.counterparty || '–')}${recurring}</b>
+      <td><div class="tx-main"><b>${esc(t.merchant || t.counterparty || '–')}</b>
         <span class="muted small clip" title="${esc(t.remittance)}">${esc(t.remittance)}</span></div></td>
       <td class="small">${esc(t.account)}<br><span class="muted">${esc(nameOf(t.owner))}</span></td>
       <td><select class="inline" data-txcat="${t.id}" aria-label="Kategorie" title="${esc(t.reason)}">${categoryOptions(t.category_id, false)}</select>${
         confirm
       }${badge}${manual}</td>
+      <td class="act">${recurring}</td>
       <td class="r tnum ${t.amount > 0 ? 'amt-in' : 'amt-out'}">${E(t.amount)}</td></tr>`;
 }
 
